@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 
 interface UseTaskQueueOptions {
     /** Execute a single task by ID. Returns success status and optional retry flag. */
-    executeTask: (taskId: string) => Promise<{ success: boolean; retryAfterRedirect?: boolean }>;
+    executeTask: (args: { taskId: string, fillOnly?: boolean }) => Promise<{ success: boolean; retryAfterRedirect?: boolean }>;
     /** Called when stop is triggered, allowing the caller to send cancel messages */
     onStop?: () => void;
 }
@@ -63,7 +63,7 @@ export function useTaskQueue({ executeTask, onStop }: UseTaskQueueOptions): UseT
             setExecutingId(currentId);
             setQueuedIds([...remaining.slice(1)]);
 
-            const { success, retryAfterRedirect } = await executeTask(currentId);
+            const { success, retryAfterRedirect } = await executeTask({ taskId: currentId });
 
             setExecutingId(null);
 

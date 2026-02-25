@@ -5,12 +5,19 @@ import { useTaskQueue } from '@/hooks/useTaskQueue';
 import { getImages, blobToBase64 } from '@/storage/imageStore';
 import { Play, Copy, Square, PlayCircle, RotateCcw, FastForward, Loader2 } from 'lucide-react';
 import { downloadAsZip } from '@/utils/downloadUtils';
+import FetchImage from './FetchImage';
+import ReferenceImageThumbnail from './ReferenceImageThumbnail';
 
 export default function App() {
     const { tasks, loading, updateTask } = useTasks();
     const { currentTool, tabId } = useActiveTab();
 
-    const visibleTasks = tasks.filter(t => t.tool === currentTool);
+    const [resultTypeFilter, setResultTypeFilter] = useState<string>('all');
+
+    const toolTasks = tasks.filter(t => t.tool === currentTool);
+    const visibleTasks = resultTypeFilter === 'all'
+        ? toolTasks
+        : toolTasks.filter(t => t.resultType === resultTypeFilter);
 
     const [error, setError] = useState<string | null>(null);
     const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
@@ -48,13 +55,14 @@ export default function App() {
     }, [error]);
 
     // Core execution function: returns true on success, false on failure
-    const executeTask = useCallback(async (taskId: string): Promise<{ success: boolean; retryAfterRedirect?: boolean }> => {
+    const executeTask = useCallback(async ({ taskId, fillOnly = false }: { taskId: string, fillOnly?: boolean }): Promise<{ success: boolean; retryAfterRedirect?: boolean }> => {
         if (!tabId) return { success: false };
 
         const task = tasks.find(t => t.id === taskId);
         if (!task) return { success: false };
 
         setError(null);
+        // If fillOnly, we might not want to show a long "in_progress" state, but we do it briefly
         await updateTask(taskId, { status: 'in_progress' });
 
         try {
@@ -70,12 +78,21 @@ export default function App() {
 
             const response = await chrome.tabs.sendMessage(tabId, {
                 type: 'EXECUTE_PROMPT',
-                payload: task.prompt,
+                payload: {
+                    ...task,
+                    fillOnly // Pass the flag to content script
+                },
                 images: imageDataUrls, // base64 data URLs for content script
-                task: task             // pass full task (including resultType) for adapter validation
+                task: task             // pass full task for adapter validation
             });
 
             if (response && response.success) {
+                if (fillOnly) {
+                    // In fillOnly mode, there is no new result to append
+                    await updateTask(taskId, { status: 'pending' }); // Reset to pending ready to run
+                    return { success: true };
+                }
+
                 const newResult = {
                     id: Date.now().toString(),
                     content: response.result || '',
@@ -265,6 +282,28 @@ export default function App() {
                     </div>
                 )}
 
+                {/* Result Type Filter Tabs */}
+                {toolTasks.length > 0 && (
+                    <div className="flex items-center space-x-1 mt-3">
+                        {[
+                            { key: 'all', label: '全部' },
+                            { key: 'image', label: '🖼️ 图片' },
+                            { key: 'video', label: '🎬 视频' },
+                            { key: 'text', label: '📝 文本' },
+                        ].map(tab => (
+                            <button
+                                key={tab.key}
+                                onClick={() => setResultTypeFilter(tab.key)}
+                                className={`text-[11px] px-2.5 py-1 rounded-full transition-colors ${resultTypeFilter === tab.key
+                                    ? 'bg-blue-600 text-white font-semibold'
+                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                                    }`}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+                )}
                 {error && (
                     <div className="absolute left-0 top-full w-full bg-red-500 text-white text-xs p-2 text-center animate-pulse z-10">
                         {error}
@@ -304,12 +343,39 @@ export default function App() {
                                         : 'border-slate-200 dark:border-slate-700 hover:shadow-md'
                                     }`}
                             >
-                                <h3 className="text-sm font-medium text-slate-900 dark:text-white mb-1">{task.title}</h3>
+                                <div className="flex items-center space-x-2 mb-1">
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${task.resultType === 'image' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+                                        : task.resultType === 'video' ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
+                                            : task.resultType === 'text' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                                                : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                                        }`}>
+                                        {task.resultType === 'image' ? '🖼️' : task.resultType === 'video' ? '🎬' : task.resultType === 'text' ? '📝' : '🔀'}
+                                    </span>
+                                    <h3 className="text-sm font-medium text-slate-900 dark:text-white truncate">{task.title}</h3>
+                                </div>
+
+                                {/* Reference Images Indicator */}
+                                {task.referenceImageIds && task.referenceImageIds.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mb-2">
+                                        {task.referenceImageIds.map((id: string) => (
+                                            <ReferenceImageThumbnail key={id} imageId={id} />
+                                        ))}
+                                    </div>
+                                )}
+
                                 <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mb-3 bg-slate-50 dark:bg-slate-900/50 p-2 rounded">
                                     "{task.prompt}"
                                 </p>
 
                                 <div className="flex items-center space-x-2 mb-3">
+                                    <button
+                                        onClick={() => navigator.clipboard.writeText(task.prompt)}
+                                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors flex-shrink-0"
+                                        title="Copy prompt"
+                                    >
+                                        <Copy size={12} />
+                                    </button>
+
                                     {isExecuting ? (
                                         <div className="flex-1 text-xs px-3 py-1.5 rounded flex items-center justify-center space-x-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                                             <span className="animate-spin inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full" />
@@ -320,25 +386,32 @@ export default function App() {
                                             <span>🕐 Queued #{queuePosition + 1}</span>
                                         </div>
                                     ) : (
-                                        <button
-                                            onClick={() => queue.runSingle(task.id)}
-                                            disabled={isDisabled}
-                                            className={`flex-1 text-white text-xs px-3 py-1.5 rounded flex items-center justify-center space-x-1 transition-colors ${isDisabled
-                                                ? 'bg-slate-300 cursor-not-allowed'
-                                                : 'bg-blue-600 hover:bg-blue-700'
-                                                }`}
-                                        >
-                                            <Play size={12} />
-                                            <span>{results.length > 0 ? 'Run Again' : 'Send & Capture'}</span>
-                                        </button>
+                                        <div className="flex-1 flex space-x-1">
+                                            <button
+                                                onClick={() => executeTask({ taskId: task.id, fillOnly: true })}
+                                                disabled={isDisabled}
+                                                className={`flex-1 flex max-w-[80px] text-slate-600 dark:text-slate-300 text-[11px] px-2 py-1.5 rounded flex items-center justify-center space-x-1 transition-colors border ${isDisabled
+                                                    ? 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-50'
+                                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm'
+                                                    }`}
+                                                title="Update prompt and images in editor without running"
+                                            >
+                                                <Square size={10} className="mr-1" />
+                                                <span>Fill Only</span>
+                                            </button>
+                                            <button
+                                                onClick={() => queue.runSingle(task.id)}
+                                                disabled={isDisabled}
+                                                className={`flex-[2] text-white text-xs px-3 py-1.5 rounded flex items-center justify-center space-x-1 transition-colors shadow-sm ${isDisabled
+                                                    ? 'bg-blue-400 cursor-not-allowed'
+                                                    : 'bg-blue-600 hover:bg-blue-700'
+                                                    }`}
+                                            >
+                                                <Play size={12} />
+                                                <span>{results.length > 0 ? 'Run Again' : 'Send & Capture'}</span>
+                                            </button>
+                                        </div>
                                     )}
-                                    <button
-                                        onClick={() => navigator.clipboard.writeText(task.prompt)}
-                                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors"
-                                        title="Copy prompt"
-                                    >
-                                        <Copy size={12} />
-                                    </button>
                                 </div>
 
                                 {/* Status badge */}
@@ -388,11 +461,21 @@ export default function App() {
                                                                         rel="noopener noreferrer"
                                                                         title="Click to view full size"
                                                                     >
-                                                                        <img
-                                                                            src={src}
-                                                                            alt={`Result ${i + 1}`}
-                                                                            className="w-full h-full max-h-[200px] object-contain rounded border border-slate-200 dark:border-slate-700 hover:opacity-90 transition-opacity cursor-pointer bg-slate-100 dark:bg-slate-900"
-                                                                        />
+                                                                        {/* Use FetchImage only for Gemini images (googleusercontent.com) which need
+                                                                            privileged sidepanel fetch. All other images use standard <img> */}
+                                                                        {src.includes('googleusercontent.com') ? (
+                                                                            <FetchImage
+                                                                                src={src}
+                                                                                alt={`Result ${i + 1}`}
+                                                                                className="w-full h-full max-h-[200px] object-contain rounded border border-slate-200 dark:border-slate-700 hover:opacity-90 transition-opacity cursor-pointer bg-slate-100 dark:bg-slate-900"
+                                                                            />
+                                                                        ) : (
+                                                                            <img
+                                                                                src={src}
+                                                                                alt={`Result ${i + 1}`}
+                                                                                className="w-full h-full max-h-[200px] object-contain rounded border border-slate-200 dark:border-slate-700 hover:opacity-90 transition-opacity cursor-pointer bg-slate-100 dark:bg-slate-900"
+                                                                            />
+                                                                        )}
                                                                     </a>
                                                                 );
                                                             })}

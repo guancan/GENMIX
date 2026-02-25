@@ -9,13 +9,17 @@
     "activeTab",
     "scripting",
     "tabs",
-    "notifications"
+    "notifications",
+    "cookies",
+    "clipboardRead",
+    "clipboardWrite"
   ],
   "host_permissions": [
     "*://chatgpt.com/*",
     "*://gemini.google.com/*",
     "*://*.openai.com/*",
     "*://*.google.com/*",
+    "*://*.googleusercontent.com/*",
     "*://jimeng.jianying.com/*"
   ],
   "background": {

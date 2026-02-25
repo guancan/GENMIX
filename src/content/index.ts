@@ -77,7 +77,13 @@ if (adapter) {
                     if (signal.aborted) throw new Error('Execution cancelled');
 
                     // Step 2: Fill the prompt text
-                    await adapter.fillPrompt(message.payload);
+                    await adapter.fillPrompt(message.payload.prompt);
+
+                    if (message.payload.fillOnly) {
+                        console.log('[Genmix] Fill Only mode requested. Skipping send.');
+                        sendResponse({ success: true, result: null });
+                        return;
+                    }
 
                     // Step 3: Click send
                     await adapter.clickSend();
