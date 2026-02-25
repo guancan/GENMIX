@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Genmix",
+  "version": "1.0.0",
+  "description": "AIGC Prompts and Tasks Manager",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://chatgpt.com/*",
+    "*://gemini.google.com/*",
+    "*://*.openai.com/*",
+    "*://*.google.com/*",
+    "*://jimeng.jianying.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background/index.ts",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Open Genmix Dashboard"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://chatgpt.com/*",
+        "*://gemini.google.com/*",
+        "*://jimeng.jianying.com/*"
+      ],
+      "js": [
+        "src/content/index.ts"
+      ],
+      "run_at": "document_end"
+    }
+  ]
+}

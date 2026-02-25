@@ -1,0 +1,143 @@
+import type { ToolAdapter } from './types';
+
+export const JimengAdapter: ToolAdapter = {
+    name: 'jimeng',
+    detect: () => window.location.hostname.includes('jimeng.jianying.com'),
+
+    async fillPrompt(text: string) {
+        // Textarea identified from real DOM: class contains 'prompt-textarea-'
+        const textarea = document.querySelector<HTMLTextAreaElement>('textarea[class*="prompt-textarea-"]');
+
+        if (!textarea) {
+            console.error('[Genmix] Jimeng: prompt textarea not found');
+            throw new Error('Jimeng prompt textarea not found');
+        }
+
+        // React-controlled textarea: use native setter to trigger synthetic events
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+            window.HTMLTextAreaElement.prototype, 'value'
+        )?.set;
+        nativeInputValueSetter?.call(textarea, text);
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        textarea.focus();
+
+        console.log('[Genmix] Jimeng: filled prompt textarea');
+
+        // Small delay for React to process input and enable the submit button
+        await new Promise(r => setTimeout(r, 500));
+    },
+
+    async clickSend() {
+        // Submit button identified from real DOM: class contains 'submit-button-KJTUYS'
+        // Two buttons share this class (collapsed + expanded); take the last (expanded state visible in toolbar)
+        const buttons = document.querySelectorAll<HTMLButtonElement>('button[class*="submit-button-KJTUYS"]');
+        const sendButton = buttons[buttons.length - 1];
+
+        if (!sendButton) {
+            console.error('[Genmix] Jimeng: submit button not found');
+            throw new Error('Jimeng submit button not found');
+        }
+
+        if (sendButton.disabled) {
+            console.warn('[Genmix] Jimeng: submit button disabled — prompt may be empty or unchanged');
+        }
+
+        sendButton.click();
+        console.log('[Genmix] Jimeng: clicked submit button');
+    },
+
+    async waitForCompletion() {
+        console.log('[Genmix] Jimeng: waiting for completion...');
+
+        // The newest item is always at data-index="0"
+        // Loading state: contains .loading-container-VeCJoq (video shimmer)
+        // Completed state: contains img[class*="image-TLmgkP"]
+
+        return new Promise<void>((resolve) => {
+            const poll = setInterval(() => {
+                const newestItem = document.querySelector('.item-Xh64V7[data-index="0"]');
+                if (!newestItem) return;
+
+                const isLoading = newestItem.querySelector('[class*="loading-container-"]');
+                const isCompleted = newestItem.querySelector('img[class*="image-TLmgkP"]');
+
+                if (!isLoading && isCompleted) {
+                    clearInterval(poll);
+                    clearTimeout(timeout);
+                    console.log('[Genmix] Jimeng: generation complete');
+                    // Brief settle delay
+                    setTimeout(resolve, 800);
+                }
+
+                // Also check progress badge text for any % indicator
+                const badge = newestItem.querySelector('[class*="progress-badge-"]');
+                if (badge) {
+                    console.log('[Genmix] Jimeng: progress:', badge.textContent?.trim());
+                }
+            }, 2000);
+
+            // Safety timeout: 3 minutes (Jimeng video generation can queue)
+            const timeout = setTimeout(() => {
+                clearInterval(poll);
+                console.warn('[Genmix] Jimeng: timed out waiting for completion');
+                resolve();
+            }, 180000);
+        });
+    },
+
+    async getLatestResult(): Promise<string | null> {
+        // Newest item is always data-index="0"
+        const newestItem = document.querySelector('.item-Xh64V7[data-index="0"]');
+        if (!newestItem) return null;
+
+        const itemId = newestItem.getAttribute('data-id');
+
+        // Collect all result images from the newest item
+        const images = newestItem.querySelectorAll<HTMLImageElement>('img[class*="image-TLmgkP"]');
+        if (images.length > 0) {
+            const imageUrls = Array.from(images).map(img => img.src).filter(Boolean);
+            console.log('[Genmix] Jimeng: captured', imageUrls.length, 'images from item', itemId);
+
+            // Fetch the first image as base64 via background worker
+            if (imageUrls[0]) {
+                try {
+                    const response = await chrome.runtime.sendMessage({
+                        type: 'FETCH_IMAGE',
+                        url: imageUrls[0]
+                    });
+
+                    if (response?.success) {
+                        return JSON.stringify({
+                            type: 'image',
+                            imageUrl: imageUrls[0],
+                            imageBase64: response.base64,
+                            allImageUrls: imageUrls,
+                            itemId,
+                            imageDescription: `Jimeng generated image (${imageUrls.length} results)`
+                        });
+                    }
+                } catch (err) {
+                    console.warn('[Genmix] Jimeng: failed to fetch image as base64', err);
+                }
+
+                // Fallback: return URL without base64
+                return JSON.stringify({
+                    type: 'image',
+                    imageUrl: imageUrls[0],
+                    allImageUrls: imageUrls,
+                    itemId,
+                    imageDescription: `Jimeng generated image (${imageUrls.length} results)`
+                });
+            }
+        }
+
+        // Check for video result
+        const video = newestItem.querySelector<HTMLVideoElement>('video:not([class*="loading-animation-"])');
+        if (video?.src) {
+            return JSON.stringify({ type: 'video', videoUrl: video.src, itemId });
+        }
+
+        return null;
+    }
+};
