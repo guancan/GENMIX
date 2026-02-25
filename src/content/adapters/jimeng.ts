@@ -133,22 +133,44 @@ export const JimengAdapter: ToolAdapter = {
         console.log('[Genmix] Jimeng: clicked submit button');
     },
 
-    async waitForCompletion() {
+    async waitForCompletion(signal?: AbortSignal) {
         console.log('[Genmix] Jimeng: waiting for completion...');
 
         // The newest item is always at data-index="0"
         // Loading state: contains .loading-container-VeCJoq (video shimmer)
-        // Completed state: contains img[class*="image-TLmgkP"]
+        // Completed state: contains img[class*="image-TLmgkP"] or video element
+        // Failed state: contains .error-tips-ZOv4N4 with text "生成失败"
 
-        return new Promise<void>((resolve) => {
+        return new Promise<void>((resolve, reject) => {
             const poll = setInterval(() => {
+                // Check abort signal
+                if (signal?.aborted) {
+                    clearInterval(poll);
+                    clearTimeout(timeout);
+                    reject(new Error('Execution cancelled'));
+                    return;
+                }
+
                 const newestItem = document.querySelector('.item-Xh64V7[data-index="0"]');
                 if (!newestItem) return;
 
-                const isLoading = newestItem.querySelector('[class*="loading-container-"]');
-                const isCompleted = newestItem.querySelector('img[class*="image-TLmgkP"]');
+                // Check for FAILURE state first
+                const errorTips = newestItem.querySelector('[class*="error-tips-"]');
+                if (errorTips) {
+                    clearInterval(poll);
+                    clearTimeout(timeout);
+                    const errorText = errorTips.textContent?.trim() || '生成失败';
+                    console.error('[Genmix] Jimeng: generation FAILED:', errorText);
+                    reject(new Error(`Jimeng generation failed: ${errorText}`));
+                    return;
+                }
 
-                if (!isLoading && isCompleted) {
+                // Check for SUCCESS state
+                const isLoading = newestItem.querySelector('[class*="loading-container-"]');
+                const isCompletedImage = newestItem.querySelector('img[class*="image-TLmgkP"]');
+                const isCompletedVideo = newestItem.querySelector('video:not([class*="loading-animation-"])');
+
+                if (!isLoading && (isCompletedImage || isCompletedVideo)) {
                     clearInterval(poll);
                     clearTimeout(timeout);
                     console.log('[Genmix] Jimeng: generation complete');
@@ -163,12 +185,19 @@ export const JimengAdapter: ToolAdapter = {
                 }
             }, 2000);
 
-            // Safety timeout: 3 minutes (Jimeng video generation can queue)
+            // Listen for abort signal to immediately cancel
+            signal?.addEventListener('abort', () => {
+                clearInterval(poll);
+                clearTimeout(timeout);
+                reject(new Error('Execution cancelled'));
+            }, { once: true });
+
+            // Safety timeout: 5 minutes (Jimeng video generation can queue for a long time)
             const timeout = setTimeout(() => {
                 clearInterval(poll);
                 console.warn('[Genmix] Jimeng: timed out waiting for completion');
-                resolve();
-            }, 180000);
+                resolve(); // Resolve on timeout, getLatestResult will return null if nothing generated
+            }, 300000);
         });
     },
 

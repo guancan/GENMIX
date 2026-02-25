@@ -102,13 +102,22 @@ export default function App() {
                                             const results = Array.isArray(t.results) ? t.results : (t.result ? [{ content: t.result }] : []);
                                             const latest = results.length > 0 ? results[results.length - 1] : null;
 
-                                            return latest ? (
+                                            if (!latest) return <span className="text-slate-300">-</span>;
+
+                                            let displayContent = latest.content;
+                                            try {
+                                                const parsed = JSON.parse(latest.content);
+                                                if (parsed.type === 'image') displayContent = '[Image Result]';
+                                                else if (parsed.type === 'video') displayContent = '[Video Result]';
+                                            } catch (e) {
+                                                // Not JSON, use as is
+                                            }
+
+                                            return (
                                                 <span title={latest.content}>
-                                                    {results.length > 1 && <span className="mr-1 text-xs font-bold text-slate-400">({results.length})</span>}
-                                                    {latest.content.substring(0, 50)}...
+                                                    {results.length > 1 && <span className="mr-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800">{results.length} Execs</span>}
+                                                    {displayContent.length > 50 ? displayContent.substring(0, 50) + '...' : displayContent}
                                                 </span>
-                                            ) : (
-                                                <span className="text-slate-300">-</span>
                                             );
                                         })()}
                                     </td>

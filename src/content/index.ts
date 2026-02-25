@@ -11,14 +11,32 @@ function getAdapter(): ToolAdapter | undefined {
 
 const adapter = getAdapter();
 
+// Module-level abort controller for cancelling in-progress execution
+let currentAbortController: AbortController | null = null;
+
 if (adapter) {
     console.log(`[Genmix] Connected to ${adapter.name}`);
 
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         console.log('[Genmix] Received message:', message);
 
+        if (message.type === 'CANCEL_EXECUTION') {
+            console.log('[Genmix] Cancelling current execution...');
+            if (currentAbortController) {
+                currentAbortController.abort();
+                currentAbortController = null;
+            }
+            sendResponse({ success: true });
+            return;
+        }
+
         if (message.type === 'EXECUTE_PROMPT' && message.payload) {
             console.log('[Genmix] Executing prompt (Fill + Send)...');
+
+            // Create a new AbortController for this execution
+            currentAbortController = new AbortController();
+            const signal = currentAbortController.signal;
+
             (async () => {
                 try {
                     // Step -1: Pre-flight validation (e.g. correct URL for task result type)
@@ -34,10 +52,15 @@ if (adapter) {
                         }
                     }
 
+                    // Check abort before each major step
+                    if (signal.aborted) throw new Error('Execution cancelled');
+
                     // Step 0: Clear any existing editor content (images + text) to prevent pollution
                     if (adapter.clearEditor) {
                         await adapter.clearEditor();
                     }
+
+                    if (signal.aborted) throw new Error('Execution cancelled');
 
                     // Step 1: Inject reference images if provided
                     if (message.images?.length && adapter.fillImages) {
@@ -51,6 +74,8 @@ if (adapter) {
                         await adapter.fillImages(blobs);
                     }
 
+                    if (signal.aborted) throw new Error('Execution cancelled');
+
                     // Step 2: Fill the prompt text
                     await adapter.fillPrompt(message.payload);
 
@@ -61,8 +86,12 @@ if (adapter) {
                     // Helper: Wait for AI to Start generating
                     await new Promise(r => setTimeout(r, 2000));
 
-                    await adapter.waitForCompletion();
+                    if (signal.aborted) throw new Error('Execution cancelled');
+
+                    await adapter.waitForCompletion(signal);
                     console.log('[Genmix] Completed. Capturing result...');
+
+                    if (signal.aborted) throw new Error('Execution cancelled');
 
                     const result = await adapter.getLatestResult(message.task?.resultType);
                     console.log('[Genmix] Execution success. Result length:', result?.length);
@@ -71,6 +100,8 @@ if (adapter) {
                 } catch (err: any) {
                     console.error('[Genmix] Execution failed:', err);
                     sendResponse({ success: false, error: err.message });
+                } finally {
+                    currentAbortController = null;
                 }
             })();
             return true; // Keep the message channel open for the async response
@@ -81,7 +112,6 @@ if (adapter) {
         }
 
         if (message.type === 'FILL_PROMPT' && message.payload) {
-            // ... (keep existing logic if we want to fallback, but for now mostly focusing on execute)
             console.log('[Genmix] Invoking adapter.fillPrompt...');
             adapter.fillPrompt(message.payload)
                 .then(() => {

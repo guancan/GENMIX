@@ -3,7 +3,8 @@ import { useTasks } from '@/hooks/useTasks';
 import { useActiveTab } from '@/hooks/useActiveTab';
 import { useTaskQueue } from '@/hooks/useTaskQueue';
 import { getImages, blobToBase64 } from '@/storage/imageStore';
-import { Play, Copy, Square, PlayCircle, RotateCcw, FastForward } from 'lucide-react';
+import { Play, Copy, Square, PlayCircle, RotateCcw, FastForward, Loader2 } from 'lucide-react';
+import { downloadAsZip } from '@/utils/downloadUtils';
 
 export default function App() {
     const { tasks, loading, updateTask } = useTasks();
@@ -12,6 +13,31 @@ export default function App() {
     const visibleTasks = tasks.filter(t => t.tool === currentTool);
 
     const [error, setError] = useState<string | null>(null);
+    const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
+
+    const toggleDownloading = (id: string, isDownloading: boolean) => {
+        setDownloadingIds(prev => {
+            const next = new Set(prev);
+            if (isDownloading) next.add(id);
+            else next.delete(id);
+            return next;
+        });
+    };
+
+    const handleDownloadAll = async (task: any, urls: string[]) => {
+        const downloadId = `${task.id}_all`;
+        if (downloadingIds.has(downloadId)) return;
+
+        try {
+            toggleDownloading(downloadId, true);
+            await downloadAsZip(urls, task.tool, task.title);
+        } catch (err) {
+            console.error('Download failed:', err);
+            setError('Download failed. Please try again.');
+        } finally {
+            toggleDownloading(downloadId, false);
+        }
+    };
 
     // Auto-clear error after 5 seconds
     useEffect(() => {
@@ -88,7 +114,74 @@ export default function App() {
         }
     }, [tabId, tasks, updateTask]);
 
-    const queue = useTaskQueue({ executeTask });
+    const handleStop = useCallback(() => {
+        if (tabId) {
+            chrome.tabs.sendMessage(tabId, { type: 'CANCEL_EXECUTION' }).catch(() => { });
+        }
+    }, [tabId]);
+
+    const queue = useTaskQueue({ executeTask, onStop: handleStop });
+
+    // --- Visibility Warning Logic ---
+    const [isTargetTabVisible, setIsTargetTabVisible] = useState(true);
+
+    useEffect(() => {
+        const checkVisibility = async () => {
+            if (!tabId) {
+                setIsTargetTabVisible(false);
+                return;
+            }
+
+            try {
+                // Get current active tab in current window
+                const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                // Get focus state of that window
+                const window = await chrome.windows.getLastFocused();
+
+                // Visible if target tab is active in current window AND window is focused
+                const visible = activeTab?.id === tabId && window.focused;
+                setIsTargetTabVisible(visible);
+            } catch (err) {
+                setIsTargetTabVisible(false);
+            }
+        };
+
+        // Initial check
+        checkVisibility();
+
+        // Listen for changes
+        const onTabActivated = () => checkVisibility();
+        const onWindowFocusChanged = () => checkVisibility();
+        const onTabUpdated = (id: number, changeInfo: any) => {
+            if (id === tabId && (changeInfo.status === 'complete' || changeInfo.url)) {
+                checkVisibility();
+            }
+        };
+
+        chrome.tabs.onActivated.addListener(onTabActivated);
+        chrome.windows.onFocusChanged.addListener(onWindowFocusChanged);
+        chrome.tabs.onUpdated.addListener(onTabUpdated);
+
+        return () => {
+            chrome.tabs.onActivated.removeListener(onTabActivated);
+            chrome.windows.onFocusChanged.removeListener(onWindowFocusChanged);
+            chrome.tabs.onUpdated.removeListener(onTabUpdated);
+        };
+    }, [tabId]);
+
+    // System Notification Logic
+    useEffect(() => {
+        if (queue.isRunning && !isTargetTabVisible) {
+            // Trigger notification
+            chrome.notifications.create({
+                type: 'basic',
+                iconUrl: 'icon-34.png',
+                title: 'Genmix 运行提示',
+                message: '⚠️ Genmix 在执行任务时，建议您保持网页在前台 ⚠️',
+                priority: 2
+            });
+        }
+    }, [queue.isRunning, isTargetTabVisible]);
 
     const openDashboard = () => {
         chrome.tabs.create({ url: 'dashboard.html' });
@@ -100,7 +193,16 @@ export default function App() {
     };
 
     return (
-        <div className="h-screen bg-slate-50 dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col">
+        <div className="h-screen bg-slate-50 dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
+            {/* Visibility Warning Banner */}
+            {queue.isRunning && !isTargetTabVisible && (
+                <div className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800/50 px-3 py-2 text-amber-700 dark:text-amber-400 text-[11px] font-medium flex items-center justify-center animate-pulse">
+                    <span className="mr-1.5 flex-shrink-0">⚠️</span>
+                    <span className="text-center font-bold">Genmix 在执行任务时，建议您保持网页在前台</span>
+                    <span className="ml-1.5 flex-shrink-0">⚠️</span>
+                </div>
+            )}
+
             <header className="p-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm relative">
                 <div className="flex items-center justify-between mb-2">
                     <h1 className="text-sm font-semibold text-slate-900 dark:text-white">Genmix Assistant</h1>
@@ -276,29 +378,40 @@ export default function App() {
                                                             <p className="text-[10px] text-slate-500 italic">"{parsed.imageDescription}"</p>
                                                         )}
                                                         <div className={`grid gap-1 ${allUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                                                            {allUrls.map((url: string, i: number) => (
-                                                                <a
-                                                                    key={i}
-                                                                    href={i === 0 ? primarySrc : url}
-                                                                    download={`genmix-${Date.now()}-${i + 1}.webp`}
-                                                                    title={`Download image ${i + 1}`}
-                                                                >
-                                                                    <img
-                                                                        src={i === 0 ? primarySrc : url}
-                                                                        alt={`Result ${i + 1}`}
-                                                                        className="w-full rounded border border-slate-200 dark:border-slate-700 hover:opacity-90 transition-opacity cursor-pointer"
-                                                                    />
-                                                                </a>
-                                                            ))}
+                                                            {allUrls.map((url: string, i: number) => {
+                                                                const src = i === 0 ? primarySrc : url;
+                                                                return (
+                                                                    <a
+                                                                        key={i}
+                                                                        href={src}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        title="Click to view full size"
+                                                                    >
+                                                                        <img
+                                                                            src={src}
+                                                                            alt={`Result ${i + 1}`}
+                                                                            className="w-full h-full max-h-[200px] object-contain rounded border border-slate-200 dark:border-slate-700 hover:opacity-90 transition-opacity cursor-pointer bg-slate-100 dark:bg-slate-900"
+                                                                        />
+                                                                    </a>
+                                                                );
+                                                            })}
                                                         </div>
                                                         <div className="flex space-x-2">
-                                                            <a
-                                                                href={primarySrc}
-                                                                download={`genmix-${Date.now()}.webp`}
-                                                                className="flex-1 text-center text-xs bg-green-600 hover:bg-green-700 text-white py-1 rounded"
+                                                            <button
+                                                                onClick={() => handleDownloadAll(task, allUrls)}
+                                                                disabled={downloadingIds.has(`${task.id}_all`)}
+                                                                className="flex-1 text-center text-xs bg-green-600 hover:bg-green-700 text-white py-1 rounded disabled:opacity-50 flex items-center justify-center space-x-1"
                                                             >
-                                                                {allUrls.length > 1 ? `Download All (${allUrls.length})` : 'Download'}
-                                                            </a>
+                                                                {downloadingIds.has(`${task.id}_all`) ? (
+                                                                    <>
+                                                                        <Loader2 size={12} className="animate-spin" />
+                                                                        <span>Bundling ZIP...</span>
+                                                                    </>
+                                                                ) : (
+                                                                    <span>{allUrls.length > 1 ? `Download All (${allUrls.length})` : 'Download'}</span>
+                                                                )}
+                                                            </button>
                                                             <button
                                                                 onClick={() => navigator.clipboard.writeText(
                                                                     allUrls.length > 1 ? allUrls.join('\n') : (parsed.imageUrl || '')
@@ -312,21 +425,30 @@ export default function App() {
                                                 );
                                             })() : parsed?.type === 'video' ? (
                                                 <div className="space-y-2">
-                                                    <video
-                                                        src={parsed.videoUrl}
-                                                        controls
-                                                        autoPlay
-                                                        loop
-                                                        className="w-full rounded border border-slate-200 dark:border-slate-700"
-                                                    />
+                                                    <a href={parsed.videoUrl} target="_blank" rel="noopener noreferrer" title="Click to open video">
+                                                        <video
+                                                            src={parsed.videoUrl}
+                                                            controls
+                                                            autoPlay
+                                                            loop
+                                                            className="w-full max-h-[120px] object-cover rounded border border-slate-200 dark:border-slate-700 cursor-pointer hover:opacity-90 transition-opacity"
+                                                        />
+                                                    </a>
                                                     <div className="flex space-x-2">
-                                                        <a
-                                                            href={parsed.videoUrl}
-                                                            download={`genmix-${Date.now()}.mp4`}
-                                                            className="flex-1 text-center text-xs bg-green-600 hover:bg-green-700 text-white py-1 rounded"
+                                                        <button
+                                                            onClick={() => handleDownloadAll(task, [parsed.videoUrl])}
+                                                            disabled={downloadingIds.has(`${task.id}_all`)}
+                                                            className="flex-1 text-center text-xs bg-green-600 hover:bg-green-700 text-white py-1 rounded disabled:opacity-50 flex items-center justify-center space-x-1"
                                                         >
-                                                            Download
-                                                        </a>
+                                                            {downloadingIds.has(`${task.id}_all`) ? (
+                                                                <>
+                                                                    <Loader2 size={12} className="animate-spin" />
+                                                                    <span>Preparing...</span>
+                                                                </>
+                                                            ) : (
+                                                                <span>Download</span>
+                                                            )}
+                                                        </button>
                                                         <button
                                                             onClick={() => navigator.clipboard.writeText(parsed.videoUrl)}
                                                             className="flex-1 text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 py-1 rounded"
@@ -342,10 +464,13 @@ export default function App() {
                                             )}
 
                                             {results.length > 1 && (
-                                                <div className="mt-1 text-center">
-                                                    <span className="text-[10px] text-slate-400 cursor-pointer hover:text-slate-600">
-                                                        + {results.length - 1} earlier results (View in Dashboard)
-                                                    </span>
+                                                <div className="mt-2 text-center pb-1">
+                                                    <button
+                                                        onClick={openDashboard}
+                                                        className="text-[11px] text-blue-600 dark:text-blue-400 font-medium hover:text-blue-700 dark:hover:text-blue-300 transition-colors cursor-pointer flex items-center justify-center mx-auto space-x-1"
+                                                    >
+                                                        <span>+ {results.length - 1} earlier results (View in Dashboard)</span>
+                                                    </button>
                                                 </div>
                                             )}
                                         </div>

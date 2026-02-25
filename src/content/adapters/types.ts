@@ -8,6 +8,6 @@ export interface ToolAdapter {
     fillImages?: (images: Blob[]) => Promise<void>;
     fillPrompt: (text: string) => Promise<void>;
     clickSend: () => Promise<void>;
-    waitForCompletion: () => Promise<void>;
+    waitForCompletion: (signal?: AbortSignal) => Promise<void>;
     getLatestResult: (expectedType?: TaskResultType) => Promise<string | null>;
 }

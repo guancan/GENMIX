@@ -3,6 +3,8 @@ import { useState, useCallback, useRef } from 'react';
 interface UseTaskQueueOptions {
     /** Execute a single task by ID. Returns success status and optional retry flag. */
     executeTask: (taskId: string) => Promise<{ success: boolean; retryAfterRedirect?: boolean }>;
+    /** Called when stop is triggered, allowing the caller to send cancel messages */
+    onStop?: () => void;
 }
 
 export interface UseTaskQueueReturn {
@@ -32,7 +34,7 @@ function randomDelay(): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export function useTaskQueue({ executeTask }: UseTaskQueueOptions): UseTaskQueueReturn {
+export function useTaskQueue({ executeTask, onStop }: UseTaskQueueOptions): UseTaskQueueReturn {
     // ... omitting unchanged state/refs ...
     const [executingId, setExecutingId] = useState<string | null>(null);
     const [queuedIds, setQueuedIds] = useState<string[]>([]);
@@ -111,8 +113,10 @@ export function useTaskQueue({ executeTask }: UseTaskQueueOptions): UseTaskQueue
     const stop = useCallback(() => {
         stoppedRef.current = true;
         setQueuedIds([]);
+        // Signal the content script to abort the current execution
+        onStop?.();
         // executingId will clear when the current task finishes
-    }, []);
+    }, [onStop]);
 
     return {
         executingId,

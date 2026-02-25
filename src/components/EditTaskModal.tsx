@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Trash2, ImagePlus } from 'lucide-react';
+import { X, Trash2, ImagePlus, Loader2, Download } from 'lucide-react';
 import type { Task, ToolType, TaskResultType } from '@/types/task';
 import { saveImage, getImages, deleteImages } from '@/storage/imageStore';
+import { downloadAsZip } from '@/utils/downloadUtils';
 
 interface EditTaskModalProps {
     task: Task | null;
@@ -28,6 +29,32 @@ export function EditTaskModal({ task, isOpen, onClose, onSave, onDelete }: EditT
     const [submitting, setSubmitting] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
+
+    const toggleDownloading = (id: string, isDownloading: boolean) => {
+        setDownloadingIds(prev => {
+            const next = new Set(prev);
+            if (isDownloading) next.add(id);
+            else next.delete(id);
+            return next;
+        });
+    };
+
+    const handleDownloadAll = async (resultIdx: number, urls: string[]) => {
+        if (!task) return;
+        const downloadId = `result_${resultIdx}`;
+        if (downloadingIds.has(downloadId)) return;
+
+        try {
+            toggleDownloading(downloadId, true);
+            await downloadAsZip(urls, task.tool, task.title || 'Untitled Task');
+        } catch (err) {
+            console.error('Download failed:', err);
+        } finally {
+            toggleDownloading(downloadId, false);
+        }
+    };
+
     const [imagePreviews, setImagePreviews] = useState<ImagePreview[]>([]);
     const [loadingImages, setLoadingImages] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -261,6 +288,121 @@ export function EditTaskModal({ task, isOpen, onClose, onSave, onDelete }: EditT
                             placeholder="Enter your prompt here..."
                         />
                     </div>
+
+                    {/* Execution History Section */}
+                    {task.results && task.results.length > 0 && (
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Execution History ({task.results.length})
+                            </label>
+                            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                {[...task.results].reverse().map((result, idx) => {
+                                    let parsed: any = null;
+                                    try {
+                                        parsed = JSON.parse(result.content);
+                                    } catch (e) {
+                                        // Not JSON
+                                    }
+
+                                    return (
+                                        <div key={idx} className="bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                                                    Execution #{task.results.length - idx}
+                                                </span>
+                                                <span className="text-[10px] text-slate-400">
+                                                    {new Date(result.createdAt).toLocaleString()}
+                                                </span>
+                                            </div>
+
+                                            {parsed?.type === 'image' ? (() => {
+                                                const allUrls: string[] = parsed.allImageUrls?.length
+                                                    ? parsed.allImageUrls
+                                                    : [parsed.imageBase64 || parsed.imageUrl].filter(Boolean);
+
+                                                const downloadId = `result_${task.results.length - 1 - idx}`;
+                                                const isDownloading = downloadingIds.has(downloadId);
+
+                                                return (
+                                                    <div className="space-y-2">
+                                                        <div className="flex justify-between items-center">
+                                                            {parsed.imageDescription && (
+                                                                <p className="text-xs text-slate-500 italic">"{parsed.imageDescription}"</p>
+                                                            )}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDownloadAll(task.results.length - 1 - idx, allUrls)}
+                                                                disabled={isDownloading}
+                                                                className="ml-auto flex items-center space-x-1 text-[10px] px-2 py-1 bg-green-50 text-green-700 border border-green-200 rounded hover:bg-green-100 transition-colors disabled:opacity-50"
+                                                            >
+                                                                {isDownloading ? (
+                                                                    <Loader2 size={10} className="animate-spin" />
+                                                                ) : (
+                                                                    <Download size={10} />
+                                                                )}
+                                                                <span>{allUrls.length > 1 ? `Download All (${allUrls.length})` : 'Download'}</span>
+                                                            </button>
+                                                        </div>
+                                                        <div className={`grid gap-2 ${allUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                                                            {allUrls.map((url: string, i: number) => (
+                                                                <a
+                                                                    key={i}
+                                                                    href={url}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    title="Click to view full size"
+                                                                >
+                                                                    <img
+                                                                        src={url}
+                                                                        alt={`Result ${i + 1}`}
+                                                                        className="w-full h-full max-h-[200px] object-contain rounded border border-slate-200 dark:border-slate-700 hover:opacity-90 transition-opacity cursor-pointer bg-slate-100 dark:bg-slate-900"
+                                                                    />
+                                                                </a>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })() : parsed?.type === 'video' ? (() => {
+                                                const downloadId = `result_${task.results.length - 1 - idx}`;
+                                                const isDownloading = downloadingIds.has(downloadId);
+
+                                                return (
+                                                    <div className="space-y-2">
+                                                        <div className="flex justify-end">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDownloadAll(task.results.length - 1 - idx, [parsed.videoUrl])}
+                                                                disabled={isDownloading}
+                                                                className="flex items-center space-x-1 text-[10px] px-2 py-1 bg-green-50 text-green-700 border border-green-200 rounded hover:bg-green-100 transition-colors disabled:opacity-50"
+                                                            >
+                                                                {isDownloading ? (
+                                                                    <Loader2 size={10} className="animate-spin" />
+                                                                ) : (
+                                                                    <Download size={10} />
+                                                                )}
+                                                                <span>Download</span>
+                                                            </button>
+                                                        </div>
+                                                        <a href={parsed.videoUrl} target="_blank" rel="noopener noreferrer" title="Click to open video">
+                                                            <video
+                                                                src={parsed.videoUrl}
+                                                                controls
+                                                                className="w-full max-h-[200px] object-contain rounded border border-slate-200 dark:border-slate-700 cursor-pointer hover:opacity-90 transition-opacity bg-slate-100 dark:bg-slate-900"
+                                                            />
+                                                        </a>
+                                                    </div>
+                                                );
+                                            })() : (
+                                                <div className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
+                                                    {result.content}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="flex items-center justify-between pt-2">
                         <button
