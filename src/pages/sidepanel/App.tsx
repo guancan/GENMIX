@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTasks } from '@/hooks/useTasks';
 import { useActiveTab } from '@/hooks/useActiveTab';
 import { useTaskQueue } from '@/hooks/useTaskQueue';
+import { getImages, blobToBase64 } from '@/storage/imageStore';
 import { Play, Copy, Square, PlayCircle, RotateCcw, FastForward } from 'lucide-react';
 
 export default function App() {
@@ -31,9 +32,20 @@ export default function App() {
         await updateTask(taskId, { status: 'in_progress' });
 
         try {
+            // Load reference images from IndexedDB and convert to base64
+            let imageDataUrls: string[] = [];
+            const imageIds = task.referenceImageIds || [];
+            if (imageIds.length > 0) {
+                const storedImages = await getImages(imageIds);
+                imageDataUrls = await Promise.all(
+                    storedImages.map(s => blobToBase64(s.blob))
+                );
+            }
+
             const response = await chrome.tabs.sendMessage(tabId, {
                 type: 'EXECUTE_PROMPT',
-                payload: task.prompt
+                payload: task.prompt,
+                images: imageDataUrls, // base64 data URLs for content script
             });
 
             if (response && response.success) {
@@ -175,10 +187,10 @@ export default function App() {
                             <div
                                 key={task.id}
                                 className={`bg-white dark:bg-slate-800 p-3 rounded-lg border shadow-sm transition-all ${isExecuting
-                                        ? 'border-blue-400 ring-1 ring-blue-200 dark:ring-blue-800'
-                                        : isQueued
-                                            ? 'border-slate-200 dark:border-slate-700 opacity-75'
-                                            : 'border-slate-200 dark:border-slate-700 hover:shadow-md'
+                                    ? 'border-blue-400 ring-1 ring-blue-200 dark:ring-blue-800'
+                                    : isQueued
+                                        ? 'border-slate-200 dark:border-slate-700 opacity-75'
+                                        : 'border-slate-200 dark:border-slate-700 hover:shadow-md'
                                     }`}
                             >
                                 <h3 className="text-sm font-medium text-slate-900 dark:text-white mb-1">{task.title}</h3>
@@ -201,8 +213,8 @@ export default function App() {
                                             onClick={() => queue.runSingle(task.id)}
                                             disabled={isDisabled}
                                             className={`flex-1 text-white text-xs px-3 py-1.5 rounded flex items-center justify-center space-x-1 transition-colors ${isDisabled
-                                                    ? 'bg-slate-300 cursor-not-allowed'
-                                                    : 'bg-blue-600 hover:bg-blue-700'
+                                                ? 'bg-slate-300 cursor-not-allowed'
+                                                : 'bg-blue-600 hover:bg-blue-700'
                                                 }`}
                                         >
                                             <Play size={12} />

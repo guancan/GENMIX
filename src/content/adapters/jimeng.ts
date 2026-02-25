@@ -4,6 +4,65 @@ export const JimengAdapter: ToolAdapter = {
     name: 'jimeng',
     detect: () => window.location.hostname.includes('jimeng.jianying.com'),
 
+    async clearEditor() {
+        console.log('[Genmix] Jimeng: clearing editor...');
+
+        // 1. Remove all existing reference images by clicking their × buttons
+        const removeButtons = document.querySelectorAll<HTMLDivElement>('[class*="remove-button-UmHkUb"]');
+        if (removeButtons.length > 0) {
+            console.log(`[Genmix] Jimeng: removing ${removeButtons.length} existing reference image(s)...`);
+            for (const btn of Array.from(removeButtons)) {
+                btn.click();
+                await new Promise(r => setTimeout(r, 300));
+            }
+            // Settle after removals
+            await new Promise(r => setTimeout(r, 500));
+        }
+
+        // 2. Clear the prompt textarea
+        const textarea = document.querySelector<HTMLTextAreaElement>('textarea[class*="prompt-textarea-"]');
+        if (textarea) {
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                window.HTMLTextAreaElement.prototype, 'value'
+            )?.set;
+            nativeInputValueSetter?.call(textarea, '');
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        console.log('[Genmix] Jimeng: editor cleared');
+        await new Promise(r => setTimeout(r, 300));
+    },
+
+    async fillImages(images: Blob[]) {
+        if (images.length === 0) return;
+        console.log('[Genmix] Jimeng: injecting', images.length, 'reference image(s)...');
+
+        const input = document.querySelector<HTMLInputElement>('input[type="file"][class*="file-input-"]');
+        if (!input) {
+            console.error('[Genmix] Jimeng: file input not found');
+            throw new Error('Jimeng file input not found — cannot upload reference images');
+        }
+
+        // Inject images one-by-one so Jimeng processes each upload
+        for (let i = 0; i < images.length; i++) {
+            const blob = images[i];
+            const file = new File([blob], `reference-${i + 1}.png`, { type: blob.type || 'image/png' });
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            input.files = dt.files;
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log(`[Genmix] Jimeng: injected image ${i + 1}/${images.length}, size: ${file.size} bytes`);
+
+            // Wait for Jimeng to process the upload before injecting the next
+            await new Promise(r => setTimeout(r, 800));
+        }
+
+        console.log('[Genmix] Jimeng: all reference images injected');
+        // Extra settle time for UI to update
+        await new Promise(r => setTimeout(r, 500));
+    },
+
     async fillPrompt(text: string) {
         // Textarea identified from real DOM: class contains 'prompt-textarea-'
         const textarea = document.querySelector<HTMLTextAreaElement>('textarea[class*="prompt-textarea-"]');

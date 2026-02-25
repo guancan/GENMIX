@@ -15,6 +15,7 @@ export interface Task {
     tool: ToolType;
     status: TaskStatus;
     results: TaskResult[];
+    referenceImageIds: string[];  // IndexedDB image IDs, 0-12
     lastExecutedAt?: number;
     createdAt: number;
     updatedAt: number;

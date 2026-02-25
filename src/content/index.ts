@@ -21,11 +21,31 @@ if (adapter) {
             console.log('[Genmix] Executing prompt (Fill + Send)...');
             (async () => {
                 try {
+                    // Step 0: Clear any existing editor content (images + text) to prevent pollution
+                    if (adapter.clearEditor) {
+                        await adapter.clearEditor();
+                    }
+
+                    // Step 1: Inject reference images if provided
+                    if (message.images?.length && adapter.fillImages) {
+                        console.log('[Genmix] Converting', message.images.length, 'base64 images to blobs...');
+                        const blobs: Blob[] = [];
+                        for (const dataUrl of message.images) {
+                            const res = await fetch(dataUrl);
+                            const blob = await res.blob();
+                            blobs.push(blob);
+                        }
+                        await adapter.fillImages(blobs);
+                    }
+
+                    // Step 2: Fill the prompt text
                     await adapter.fillPrompt(message.payload);
+
+                    // Step 3: Click send
                     await adapter.clickSend();
                     console.log('[Genmix] Sent. Waiting for response...');
 
-                    // Helper: Wait for AI to Start generating (optional, but good if there's lag before stop button appears)
+                    // Helper: Wait for AI to Start generating
                     await new Promise(r => setTimeout(r, 2000));
 
                     await adapter.waitForCompletion();

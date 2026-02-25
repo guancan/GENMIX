@@ -134,7 +134,7 @@ export default function App() {
             <CreateTaskModal
                 isOpen={isCreateOpen}
                 onClose={() => setIsCreateOpen(false)}
-                onSubmit={(data) => addTask({ ...data, results: [] })}
+                onSubmit={(data) => addTask({ ...data, results: [], referenceImageIds: data.referenceImageIds || [] })}
             />
 
             <EditTaskModal
