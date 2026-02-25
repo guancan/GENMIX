@@ -21,6 +21,19 @@ if (adapter) {
             console.log('[Genmix] Executing prompt (Fill + Send)...');
             (async () => {
                 try {
+                    // Step -1: Pre-flight validation (e.g. correct URL for task result type)
+                    if (adapter.validateState && message.task) {
+                        const state = await adapter.validateState(message.task);
+                        if (!state.valid) {
+                            console.warn('[Genmix] State validation failed:', state.error);
+                            if (state.redirectUrl) {
+                                sendResponse({ success: false, redirectUrl: state.redirectUrl, error: state.error });
+                                return;
+                            }
+                            throw new Error(state.error || 'Invalid page state for this task');
+                        }
+                    }
+
                     // Step 0: Clear any existing editor content (images + text) to prevent pollution
                     if (adapter.clearEditor) {
                         await adapter.clearEditor();
@@ -51,7 +64,7 @@ if (adapter) {
                     await adapter.waitForCompletion();
                     console.log('[Genmix] Completed. Capturing result...');
 
-                    const result = await adapter.getLatestResult();
+                    const result = await adapter.getLatestResult(message.task?.resultType);
                     console.log('[Genmix] Execution success. Result length:', result?.length);
 
                     sendResponse({ success: true, result: result });
@@ -60,6 +73,10 @@ if (adapter) {
                     sendResponse({ success: false, error: err.message });
                 }
             })();
+            return true; // Keep the message channel open for the async response
+        }
+
+        if (message.type === 'PING') {
             return true; // Keep channel open
         }
 

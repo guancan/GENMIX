@@ -22,11 +22,11 @@ export default function App() {
     }, [error]);
 
     // Core execution function: returns true on success, false on failure
-    const executeTask = useCallback(async (taskId: string): Promise<boolean> => {
-        if (!tabId) return false;
+    const executeTask = useCallback(async (taskId: string): Promise<{ success: boolean; retryAfterRedirect?: boolean }> => {
+        if (!tabId) return { success: false };
 
         const task = tasks.find(t => t.id === taskId);
-        if (!task) return false;
+        if (!task) return { success: false };
 
         setError(null);
         await updateTask(taskId, { status: 'in_progress' });
@@ -34,7 +34,7 @@ export default function App() {
         try {
             // Load reference images from IndexedDB and convert to base64
             let imageDataUrls: string[] = [];
-            const imageIds = task.referenceImageIds || [];
+            let imageIds = Array.isArray(task.referenceImageIds) ? task.referenceImageIds : [];
             if (imageIds.length > 0) {
                 const storedImages = await getImages(imageIds);
                 imageDataUrls = await Promise.all(
@@ -46,6 +46,7 @@ export default function App() {
                 type: 'EXECUTE_PROMPT',
                 payload: task.prompt,
                 images: imageDataUrls, // base64 data URLs for content script
+                task: task             // pass full task (including resultType) for adapter validation
             });
 
             if (response && response.success) {
@@ -62,7 +63,15 @@ export default function App() {
                     status: 'completed',
                     lastExecutedAt: Date.now()
                 });
-                return true;
+                return { success: true };
+            } else if (response && response.redirectUrl) {
+                console.log(`[Genmix] Task ${task.id} requires redirect to:`, response.redirectUrl);
+                // Update the tab URL
+                await chrome.tabs.update(tabId, { url: response.redirectUrl });
+                // Mark task as pending (not failed) since it's just waiting for a redirect
+                setError(`Redirecting to match requested Result Type (${task.resultType})...`);
+                await updateTask(taskId, { status: 'pending' });
+                return { success: false, retryAfterRedirect: true };
             } else {
                 throw new Error(response?.error || 'Unknown error');
             }
@@ -75,7 +84,7 @@ export default function App() {
             } else {
                 setError('Failed: ' + (e.message || ''));
             }
-            return false;
+            return { success: false };
         }
     }, [tabId, tasks, updateTask]);
 
@@ -250,7 +259,7 @@ export default function App() {
                                         <div className="border-t border-slate-100 dark:border-slate-700 pt-2">
                                             <div className="flex items-center justify-between mb-1">
                                                 <span className="text-[10px] uppercase font-bold text-slate-400">
-                                                    {parsed?.type === 'image' ? '🖼️ Image Result' : 'Latest Result'}
+                                                    {parsed?.type === 'image' ? '🖼️ Image Result' : parsed?.type === 'video' ? '🎬 Video Result' : 'Latest Result'}
                                                 </span>
                                                 <span className="text-[10px] text-slate-400">{new Date(latestResult.createdAt).toLocaleTimeString()}</span>
                                             </div>
@@ -301,7 +310,32 @@ export default function App() {
                                                         </div>
                                                     </div>
                                                 );
-                                            })() : (
+                                            })() : parsed?.type === 'video' ? (
+                                                <div className="space-y-2">
+                                                    <video
+                                                        src={parsed.videoUrl}
+                                                        controls
+                                                        autoPlay
+                                                        loop
+                                                        className="w-full rounded border border-slate-200 dark:border-slate-700"
+                                                    />
+                                                    <div className="flex space-x-2">
+                                                        <a
+                                                            href={parsed.videoUrl}
+                                                            download={`genmix-${Date.now()}.mp4`}
+                                                            className="flex-1 text-center text-xs bg-green-600 hover:bg-green-700 text-white py-1 rounded"
+                                                        >
+                                                            Download
+                                                        </a>
+                                                        <button
+                                                            onClick={() => navigator.clipboard.writeText(parsed.videoUrl)}
+                                                            className="flex-1 text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 py-1 rounded"
+                                                        >
+                                                            Copy URL
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
                                                 <div className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/30 p-2 rounded max-h-32 overflow-y-auto whitespace-pre-wrap">
                                                     {parsed?.content || latestResult.content}
                                                 </div>

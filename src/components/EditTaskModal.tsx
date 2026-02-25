@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Trash2, ImagePlus } from 'lucide-react';
-import type { Task, ToolType } from '@/types/task';
+import type { Task, ToolType, TaskResultType } from '@/types/task';
 import { saveImage, getImages, deleteImages } from '@/storage/imageStore';
 
 interface EditTaskModalProps {
@@ -24,6 +24,7 @@ export function EditTaskModal({ task, isOpen, onClose, onSave, onDelete }: EditT
     const [title, setTitle] = useState('');
     const [prompt, setPrompt] = useState('');
     const [tool, setTool] = useState<ToolType>('chatgpt');
+    const [resultType, setResultType] = useState<TaskResultType>('mixed');
     const [submitting, setSubmitting] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
@@ -37,6 +38,7 @@ export function EditTaskModal({ task, isOpen, onClose, onSave, onDelete }: EditT
             setTitle(task.title);
             setPrompt(task.prompt);
             setTool(task.tool);
+            setResultType(task.resultType || 'mixed'); // Handle older tasks without resultType
             setConfirmDelete(false);
 
             // Load existing reference images
@@ -102,7 +104,7 @@ export function EditTaskModal({ task, isOpen, onClose, onSave, onDelete }: EditT
                 }
             }
 
-            await onSave(task.id, { title, tool, prompt, referenceImageIds: finalIds });
+            await onSave(task.id, { title, tool, resultType, prompt, referenceImageIds: finalIds });
             onClose();
         } catch (error) {
             console.error(error);
@@ -171,6 +173,22 @@ export function EditTaskModal({ task, isOpen, onClose, onSave, onDelete }: EditT
                             <option value="jimeng">即梦 (Jimeng)</option>
                             <option value="sora">Sora</option>
                             <option value="other">Other</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Expected Result Type
+                        </label>
+                        <select
+                            value={resultType}
+                            onChange={(e) => setResultType(e.target.value as TaskResultType)}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                        >
+                            <option value="mixed">Mixed (Any results)</option>
+                            <option value="image">Image Only</option>
+                            <option value="video">Video Only</option>
+                            <option value="text">Text Only</option>
                         </select>
                     </div>
 

@@ -1,11 +1,11 @@
 import { useState, useCallback, useRef } from 'react';
 
 interface UseTaskQueueOptions {
-    /** Execute a single task by ID. Returns true on success, false on failure. */
-    executeTask: (taskId: string) => Promise<boolean>;
+    /** Execute a single task by ID. Returns success status and optional retry flag. */
+    executeTask: (taskId: string) => Promise<{ success: boolean; retryAfterRedirect?: boolean }>;
 }
 
-interface UseTaskQueueReturn {
+export interface UseTaskQueueReturn {
     /** ID of the currently executing task */
     executingId: string | null;
     /** Ordered list of task IDs waiting to execute */
@@ -33,6 +33,7 @@ function randomDelay(): Promise<void> {
 }
 
 export function useTaskQueue({ executeTask }: UseTaskQueueOptions): UseTaskQueueReturn {
+    // ... omitting unchanged state/refs ...
     const [executingId, setExecutingId] = useState<string | null>(null);
     const [queuedIds, setQueuedIds] = useState<string[]>([]);
     const [autoNext, setAutoNext] = useState(true);
@@ -56,36 +57,36 @@ export function useTaskQueue({ executeTask }: UseTaskQueueOptions): UseTaskQueue
             if (stoppedRef.current) break;
 
             const currentId = remaining[0];
-            remaining = remaining.slice(1);
 
             setExecutingId(currentId);
-            setQueuedIds([...remaining]);
+            setQueuedIds([...remaining.slice(1)]);
 
-            const success = await executeTask(currentId);
+            const { success, retryAfterRedirect } = await executeTask(currentId);
 
             setExecutingId(null);
 
             if (stoppedRef.current) break;
 
+            if (retryAfterRedirect) {
+                // Task was redirected. Wait for page load and force retry
+                console.log(`[Genmix] Redirect triggered for ${currentId}. Waiting and retrying...`);
+                await new Promise(r => setTimeout(r, 3000));
+                continue; // Do not slice remaining, just loop again
+            }
+
+            remaining = remaining.slice(1);
+
             if (!success && retryOnFailRef.current) {
-                // Retry: put it back at the front
+                // Retry requested by user toggle
                 remaining = [currentId, ...remaining];
                 setQueuedIds([...remaining]);
                 await randomDelay();
                 continue;
             }
 
-            if (!success && !autoNextRef.current) {
-                // Failed and no auto-next — stop
-                break;
-            }
+            if (!success && !autoNextRef.current) break;
+            if (success && !autoNextRef.current) break;
 
-            if (success && !autoNextRef.current) {
-                // Succeeded but auto-next is off — stop
-                break;
-            }
-
-            // Delay before next task
             if (remaining.length > 0) {
                 await randomDelay();
             }

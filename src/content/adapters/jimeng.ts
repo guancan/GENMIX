@@ -4,6 +4,33 @@ export const JimengAdapter: ToolAdapter = {
     name: 'jimeng',
     detect: () => window.location.hostname.includes('jimeng.jianying.com'),
 
+    async validateState(task) {
+        console.log('[Genmix] Jimeng: validating state for resultType:', task.resultType);
+
+        // Jimeng uses query parameters to determine generation type: ?type=image or ?type=video
+        const currentUrl = window.location.href;
+        const isImagePage = currentUrl.includes('type=image');
+        const isVideoPage = currentUrl.includes('type=video');
+
+        if (task.resultType === 'image' && !isImagePage) {
+            return {
+                valid: false,
+                redirectUrl: 'https://jimeng.jianying.com/ai-tool/generate?type=image',
+                error: 'Task requires image generation but current page is not set to image mode.'
+            };
+        }
+
+        if (task.resultType === 'video' && !isVideoPage) {
+            return {
+                valid: false,
+                redirectUrl: 'https://jimeng.jianying.com/ai-tool/generate?type=video',
+                error: 'Task requires video generation but current page is not set to video mode.'
+            };
+        }
+
+        return { valid: true };
+    },
+
     async clearEditor() {
         console.log('[Genmix] Jimeng: clearing editor...');
 
@@ -145,56 +172,70 @@ export const JimengAdapter: ToolAdapter = {
         });
     },
 
-    async getLatestResult(): Promise<string | null> {
+    async getLatestResult(expectedType?: string): Promise<string | null> {
         // Newest item is always data-index="0"
         const newestItem = document.querySelector('.item-Xh64V7[data-index="0"]');
         if (!newestItem) return null;
 
         const itemId = newestItem.getAttribute('data-id');
 
-        // Collect all result images from the newest item
-        const images = newestItem.querySelectorAll<HTMLImageElement>('img[class*="image-TLmgkP"]');
-        if (images.length > 0) {
-            const imageUrls = Array.from(images).map(img => img.src).filter(Boolean);
-            console.log('[Genmix] Jimeng: captured', imageUrls.length, 'images from item', itemId);
+        // Note: Jimeng sometimes returns multiple images, or a single video.
+        const isMixedOrImage = !expectedType || expectedType === 'mixed' || expectedType === 'image';
+        const isMixedOrVideo = !expectedType || expectedType === 'mixed' || expectedType === 'video';
 
-            // Fetch the first image as base64 via background worker
-            if (imageUrls[0]) {
-                try {
-                    const response = await chrome.runtime.sendMessage({
-                        type: 'FETCH_IMAGE',
-                        url: imageUrls[0]
-                    });
+        // 1. Check for Image Results (if requested)
+        if (isMixedOrImage) {
+            const images = newestItem.querySelectorAll<HTMLImageElement>('img[class*="image-TLmgkP"]');
+            if (images.length > 0) {
+                const imageUrls = Array.from(images).map(img => img.src).filter(Boolean);
+                console.log('[Genmix] Jimeng: captured', imageUrls.length, 'images from item', itemId);
 
-                    if (response?.success) {
-                        return JSON.stringify({
-                            type: 'image',
-                            imageUrl: imageUrls[0],
-                            imageBase64: response.base64,
-                            allImageUrls: imageUrls,
-                            itemId,
-                            imageDescription: `Jimeng generated image (${imageUrls.length} results)`
+                // Fetch the first image as base64 via background worker
+                if (imageUrls[0]) {
+                    try {
+                        const response = await chrome.runtime.sendMessage({
+                            type: 'FETCH_IMAGE',
+                            url: imageUrls[0]
                         });
-                    }
-                } catch (err) {
-                    console.warn('[Genmix] Jimeng: failed to fetch image as base64', err);
-                }
 
-                // Fallback: return URL without base64
-                return JSON.stringify({
-                    type: 'image',
-                    imageUrl: imageUrls[0],
-                    allImageUrls: imageUrls,
-                    itemId,
-                    imageDescription: `Jimeng generated image (${imageUrls.length} results)`
-                });
+                        if (response?.success) {
+                            return JSON.stringify({
+                                type: 'image',
+                                imageUrl: imageUrls[0],
+                                imageBase64: response.base64,
+                                allImageUrls: imageUrls,
+                                itemId,
+                                imageDescription: `Jimeng generated image (${imageUrls.length} results)`
+                            });
+                        }
+                    } catch (err) {
+                        console.warn('[Genmix] Jimeng: failed to fetch image as base64', err);
+                    }
+
+                    // Fallback: return URL without base64
+                    return JSON.stringify({
+                        type: 'image',
+                        imageUrl: imageUrls[0],
+                        allImageUrls: imageUrls,
+                        itemId,
+                        imageDescription: `Jimeng generated image (${imageUrls.length} results)`
+                    });
+                }
             }
         }
 
-        // Check for video result
-        const video = newestItem.querySelector<HTMLVideoElement>('video:not([class*="loading-animation-"])');
-        if (video?.src) {
-            return JSON.stringify({ type: 'video', videoUrl: video.src, itemId });
+        // 2. Check for Video Results (if requested or if image failed/wasn't requested in mixed mode)
+        if (isMixedOrVideo) {
+            const video = newestItem.querySelector<HTMLVideoElement>('video:not([class*="loading-animation-"])');
+            if (video?.src) {
+                console.log('[Genmix] Jimeng: captured video from item', itemId);
+                return JSON.stringify({ type: 'video', videoUrl: video.src, itemId });
+            }
+        }
+
+        // 3. Fallback for text (Jimeng currently doesn't generate text-only responses, but just in case)
+        if (expectedType === 'text') {
+            console.warn('[Genmix] Jimeng: Task requested text result, but Jimeng only produces images/videos.');
         }
 
         return null;

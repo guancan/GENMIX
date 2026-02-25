@@ -37,9 +37,9 @@ test.describe('Dashboard Debugging', () => {
 
         const taskName = `PW Debug Task ${Date.now()}`;
 
-        // Fill form
+        // Fill out the form
         await page.getByPlaceholder(/e\.g\. Write a poem/i).fill(taskName);
-        await page.getByRole('combobox').selectOption('jimeng');
+        await page.getByRole('combobox').first().selectOption('jimeng');
         await page.getByPlaceholder(/Enter your prompt/i).fill('A calm mountain landscape at dawn.');
 
         // Submit

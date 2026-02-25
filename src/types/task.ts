@@ -8,11 +8,14 @@ export interface TaskResult {
     createdAt: number;
 }
 
+export type TaskResultType = 'text' | 'image' | 'video' | 'mixed';
+
 export interface Task {
     id: string;
     title: string;
     prompt: string;
     tool: ToolType;
+    resultType: TaskResultType;
     status: TaskStatus;
     results: TaskResult[];
     referenceImageIds: string[];  // IndexedDB image IDs, 0-12
