@@ -50,6 +50,14 @@ const STATUS_OPTIONS: { key: string; label: string }[] = [
     { key: 'in_progress', label: 'In Progress' },
 ];
 
+const TYPE_OPTIONS: { key: string; label: string }[] = [
+    { key: 'all', label: '全部类型' },
+    { key: 'image', label: '🖼️ 图片' },
+    { key: 'video', label: '🎬 视频' },
+    { key: 'text', label: '📝 文本' },
+    { key: 'mixed', label: '🔀 混合' },
+];
+
 /* ─── Sortable Row Component ─── */
 function SortableRow({
     task,
@@ -196,6 +204,7 @@ export default function App() {
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const [activeTab, setActiveTab] = useState('all');
     const [statusFilter, setStatusFilter] = useState('all');
+    const [typeFilter, setTypeFilter] = useState('all');
     const [jumpToast, setJumpToast] = useState<{ tool: string; visible: boolean } | null>(null);
     const jumpToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -212,26 +221,6 @@ export default function App() {
         });
         setConfirmBatchDelete(false);
     }, []);
-
-    const toggleSelectAll = useCallback(() => {
-        setSelectedIds(prev => {
-            if (prev.size === filteredTasks.length && filteredTasks.length > 0) {
-                return new Set();
-            }
-            return new Set(filteredTasks.map(t => t.id));
-        });
-        setConfirmBatchDelete(false);
-    }, []);
-
-    const handleBatchDelete = async () => {
-        if (!confirmBatchDelete) {
-            setConfirmBatchDelete(true);
-            return;
-        }
-        await deleteTasks(Array.from(selectedIds));
-        setSelectedIds(new Set());
-        setConfirmBatchDelete(false);
-    };
 
     // Drag-and-drop sensors
     const sensors = useSensors(
@@ -257,8 +246,31 @@ export default function App() {
         if (statusFilter !== 'all') {
             result = result.filter(t => t.status === statusFilter);
         }
+        if (typeFilter !== 'all') {
+            result = result.filter(t => t.resultType === typeFilter);
+        }
         return result;
-    }, [tasks, activeTab, statusFilter]);
+    }, [tasks, activeTab, statusFilter, typeFilter]);
+
+    const toggleSelectAll = () => {
+        setSelectedIds(prev => {
+            if (prev.size > 0 && prev.size === filteredTasks.length) {
+                return new Set<string>();
+            }
+            return new Set(filteredTasks.map(t => t.id));
+        });
+        setConfirmBatchDelete(false);
+    };
+
+    const handleBatchDelete = async () => {
+        if (!confirmBatchDelete) {
+            setConfirmBatchDelete(true);
+            return;
+        }
+        await deleteTasks(Array.from(selectedIds));
+        setSelectedIds(new Set());
+        setConfirmBatchDelete(false);
+    };
 
     // Handle drag end: reorder
     const handleDragEnd = async (event: DragEndEvent) => {
@@ -374,6 +386,21 @@ export default function App() {
                                 onClick={() => setStatusFilter(opt.key)}
                                 className={`text-xs px-2.5 py-1 rounded-full transition-colors ${statusFilter === opt.key
                                     ? 'bg-blue-600 text-white font-semibold'
+                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                                    }`}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1" />
+                    <div className="flex items-center space-x-1">
+                        {TYPE_OPTIONS.map(opt => (
+                            <button
+                                key={opt.key}
+                                onClick={() => setTypeFilter(opt.key)}
+                                className={`text-xs px-2.5 py-1 rounded-full transition-colors ${typeFilter === opt.key
+                                    ? 'bg-violet-600 text-white font-semibold'
                                     : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
                                     }`}
                             >
