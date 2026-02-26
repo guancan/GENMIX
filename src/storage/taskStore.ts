@@ -70,7 +70,7 @@ export const TaskStore = {
             createdAt: now,
             updatedAt: now,
             results: [],
-            referenceImageIds: [],
+            referenceImageIds: (t as any).referenceImageIds || [],
         }));
 
         if (strategy === 'replace') {

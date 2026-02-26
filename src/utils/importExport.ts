@@ -209,6 +209,7 @@ export interface ImportedTask {
     tool: ToolType;
     resultType: TaskResultType;
     prompt: string;
+    referenceImages?: string[];
 }
 
 /** Parse a JSON file into importable tasks */
@@ -220,6 +221,7 @@ export function parseJsonImport(content: string): ImportedTask[] {
         tool: validateTool(item.tool),
         resultType: validateResultType(item.resultType),
         prompt: item.prompt || '',
+        referenceImages: Array.isArray(item.referenceImages) ? item.referenceImages : undefined,
     }));
 }
 
@@ -233,14 +235,24 @@ export function parseCsvImport(content: string): ImportedTask[] {
     const toolIdx = headers.indexOf('tool');
     const resultTypeIdx = headers.indexOf('resulttype');
     const promptIdx = headers.indexOf('prompt');
+    const refIdsIdx = headers.indexOf('referenceimages');
 
     return lines.slice(1).map(line => {
         const cols = parseCsvLine(line);
+        let referenceImages: string[] | undefined;
+        if (refIdsIdx >= 0 && cols[refIdsIdx]) {
+            referenceImages = cols[refIdsIdx]
+                .split(',')
+                .map(s => s.trim())
+                .filter(Boolean);
+        }
+
         return {
             title: cols[titleIdx] || 'Untitled',
             tool: validateTool(cols[toolIdx]),
             resultType: validateResultType(cols[resultTypeIdx]),
             prompt: cols[promptIdx] || '',
+            referenceImages,
         };
     });
 }
@@ -300,6 +312,7 @@ export function generateJsonTemplate(): string {
             tool: 'gemini',
             resultType: 'image',
             prompt: '一只可爱的猫咪在阳光下玩耍',
+            referenceImages: ['cat_ref.png']
         },
         {
             title: '示例任务 2 - 视频生成',
@@ -313,8 +326,8 @@ export function generateJsonTemplate(): string {
 /** Generate a sample CSV import template */
 export function generateCsvTemplate(): string {
     return [
-        'title,tool,resultType,prompt',
-        '示例任务 1 - 图片生成,gemini,image,一只可爱的猫咪在阳光下玩耍',
-        '示例任务 2 - 视频生成,jimeng,video,日落时分的城市天际线延时摄影效果',
+        'title,tool,resultType,prompt,referenceImages',
+        '示例任务 1 - 图片生成,gemini,image,一只可爱的猫咪在阳光下玩耍,cat_ref.png',
+        '示例任务 2 - 视频生成,jimeng,video,日落时分的城市天际线延时摄影效果,',
     ].join('\n');
 }

@@ -509,7 +509,7 @@ export default function App() {
                     const fullTasks = importedTasks.map(t => ({
                         ...t,
                         results: [],
-                        referenceImageIds: [],
+                        referenceImageIds: t.referenceImageIds || [],
                     }));
                     await importTasks(fullTasks, strategy);
                 }}

@@ -1,11 +1,12 @@
 import React, { useState, useRef } from 'react';
-import { X, Upload, FileText, AlertCircle, Download } from 'lucide-react';
+import { X, Upload, FileText, AlertCircle, Download, Image as ImageIcon } from 'lucide-react';
 import { parseJsonImport, parseCsvImport, generateJsonTemplate, generateCsvTemplate, downloadFile, type ImportedTask } from '@/utils/importExport';
+import { saveImage } from '@/storage/imageStore';
 
 interface ImportModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onImport: (tasks: ImportedTask[], strategy: 'replace' | 'prepend' | 'append') => Promise<void>;
+    onImport: (tasks: (ImportedTask & { referenceImageIds?: string[] })[], strategy: 'replace' | 'prepend' | 'append') => Promise<void>;
 }
 
 export function ImportModal({ isOpen, onClose, onImport }: ImportModalProps) {
@@ -15,6 +16,20 @@ export function ImportModal({ isOpen, onClose, onImport }: ImportModalProps) {
     const [importing, setImporting] = useState(false);
     const [fileName, setFileName] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const folderInputRef = useRef<HTMLInputElement>(null);
+
+    // Reference images state
+    const [referenceFolder, setReferenceFolder] = useState<File[]>([]);
+    const [matchedImages, setMatchedImages] = useState<Map<string, File>>(new Map());
+
+    const requiredImageNames = parsedTasks
+        .flatMap(t => t.referenceImages || [])
+        .filter(Boolean);
+
+    // Check if any required image needs matching
+    const needsImageMatching = requiredImageNames.length > 0;
+    const matchCount = Array.from(new Set(requiredImageNames)).filter(name => matchedImages.has(name.toLowerCase())).length;
+    const uniqueRequiredCount = new Set(requiredImageNames).size;
 
     if (!isOpen) return null;
 
@@ -43,16 +58,60 @@ export function ImportModal({ isOpen, onClose, onImport }: ImportModalProps) {
             }
 
             setParsedTasks(tasks);
+            setReferenceFolder([]);
+            setMatchedImages(new Map());
         } catch (err) {
             setError(`解析文件失败: ${err instanceof Error ? err.message : '未知错误'}`);
         }
+    };
+
+    const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
+
+        setReferenceFolder(files);
+        // Build a map of filename -> File for quick matching
+        const map = new Map<string, File>();
+        files.forEach(f => {
+            // Store only the filename (ignore path) for matching, use lowercase for case-insensitive
+            map.set(f.name.toLowerCase(), f);
+        });
+        setMatchedImages(map);
     };
 
     const handleImport = async () => {
         if (parsedTasks.length === 0) return;
         setImporting(true);
         try {
-            await onImport(parsedTasks, strategy);
+            // Process reference images and upload to IndexedDB
+            const finalTasks = await Promise.all(parsedTasks.map(async (task) => {
+                const newTask: ImportedTask & { referenceImageIds: string[] } = {
+                    ...task,
+                    referenceImageIds: [],
+                };
+
+                if (task.referenceImages && task.referenceImages.length > 0) {
+                    for (const name of task.referenceImages) {
+                        const file = matchedImages.get(name.toLowerCase());
+                        if (file) {
+                            console.log(`[Genmix] Matching found for ${name}, saving to image store...`);
+                            try {
+                                const id = await saveImage(file, file.name);
+                                console.log(`[Genmix] Saved ${name} with ID: ${id}`);
+                                newTask.referenceImageIds.push(id);
+                            } catch (e) {
+                                console.error('[Genmix] Failed to save reference image:', name, e);
+                            }
+                        }
+                    }
+                }
+                return newTask;
+            }));
+
+            console.log('[Genmix] Final tasks with reference images:', finalTasks);
+
+            // Force pass the extended type
+            await onImport(finalTasks as any, strategy);
             handleClose();
         } catch (err) {
             setError(`导入失败: ${err instanceof Error ? err.message : '未知错误'}`);
@@ -66,6 +125,8 @@ export function ImportModal({ isOpen, onClose, onImport }: ImportModalProps) {
         setError('');
         setFileName('');
         setStrategy('append');
+        setReferenceFolder([]);
+        setMatchedImages(new Map());
         onClose();
     };
 
@@ -153,6 +214,51 @@ export function ImportModal({ isOpen, onClose, onImport }: ImportModalProps) {
                                     )}
                                 </div>
                             </div>
+
+                            {/* Reference Images Folder Selection */}
+                            {needsImageMatching && (
+                                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <p className="text-sm font-medium text-blue-700 dark:text-blue-300 flex items-center gap-1.5">
+                                            <ImageIcon size={14} />
+                                            需要参考图片 ({matchCount}/{uniqueRequiredCount} 已匹配)
+                                        </p>
+                                        <button
+                                            onClick={() => folderInputRef.current?.click()}
+                                            className="text-xs px-2.5 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-800 dark:hover:bg-blue-700 text-blue-700 dark:text-blue-300 rounded"
+                                        >
+                                            {referenceFolder.length > 0 ? '重新选择文件夹' : '选择图片文件夹'}
+                                        </button>
+                                        <input
+                                            ref={folderInputRef}
+                                            type="file"
+                                            {...{ webkitdirectory: "", directory: "" }}
+                                            className="hidden"
+                                            onChange={handleFolderSelect}
+                                        />
+                                    </div>
+                                    <p className="text-xs text-blue-600/80 dark:text-blue-400/80 leading-relaxed mb-2">
+                                        任务列表中包含了参考图片文件名。请选择<b>包含这些图片的文件夹</b>，然后在弹窗中直接点击“上传/选择”。<br />
+                                        <span className="opacity-70">注：在文件夹选择模式下，单个文件通常显示为不可选（灰色），这是正常现象。</span>
+                                    </p>
+
+                                    {/* Unmatched files list */}
+                                    {referenceFolder.length > 0 && matchCount < uniqueRequiredCount && (
+                                        <div className="mt-2 pt-2 border-t border-blue-200/50 dark:border-blue-800/50">
+                                            <p className="text-xs font-medium text-amber-600 dark:text-amber-500 mb-1">未找到以下图片：</p>
+                                            <div className="max-h-20 overflow-y-auto space-y-1">
+                                                {Array.from(new Set(requiredImageNames))
+                                                    .filter(name => !matchedImages.has(name.toLowerCase()))
+                                                    .map(name => (
+                                                        <p key={name} className="text-[11px] text-amber-600/80 dark:text-amber-500/80 truncate">
+                                                            ❌ {name}
+                                                        </p>
+                                                    ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Strategy Buttons */}
                             <div className="space-y-2">
