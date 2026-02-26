@@ -344,6 +344,7 @@ export function EditTaskModal({ task, isOpen, onClose, onSave, onDelete }: EditT
                                                         const allUrls: string[] = parsed.allImageUrls?.length
                                                             ? parsed.allImageUrls
                                                             : [parsed.imageBase64 || parsed.imageUrl].filter(Boolean);
+                                                        const cachedIds = result.cachedMediaIds || [];
                                                         const downloadId = `result_${task.results.length - 1 - idx}`;
                                                         const isDownloading = downloadingIds.has(downloadId);
 
@@ -370,6 +371,7 @@ export function EditTaskModal({ task, isOpen, onClose, onSave, onDelete }: EditT
                                                                                 src={url}
                                                                                 alt={`Result ${i + 1}`}
                                                                                 className="w-full h-full max-h-[200px] object-contain rounded border border-slate-200 dark:border-slate-700 hover:opacity-90 transition-opacity cursor-pointer bg-slate-100 dark:bg-slate-900"
+                                                                                cachedMediaId={cachedIds[i]}
                                                                             />
                                                                         </a>
                                                                     ))}
@@ -398,6 +400,7 @@ export function EditTaskModal({ task, isOpen, onClose, onSave, onDelete }: EditT
                                                                         src={parsed.videoUrl}
                                                                         type="video"
                                                                         className="w-full max-h-[200px] object-contain rounded border border-slate-200 dark:border-slate-700 cursor-pointer hover:opacity-90 transition-opacity bg-slate-100 dark:bg-slate-900"
+                                                                        cachedMediaId={result.cachedMediaIds?.[0]}
                                                                     />
                                                                 </a>
                                                             </div>

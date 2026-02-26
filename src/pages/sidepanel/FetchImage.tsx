@@ -1,22 +1,25 @@
 import { useState, useEffect } from 'react';
+import { getMedia, mediaToObjectUrl } from '@/storage/mediaStore';
 
 /**
  * FetchImage: renders an image by fetching the URL from the sidepanel context.
- * 
+ *
  * Extension pages (chrome-extension://) with host_permissions can fetch cross-origin
- * URLs without CORS restrictions and with full cookie access. This bypasses all the
- * CSP/CORS issues that block content scripts and background workers.
- * 
+ * URLs without CORS restrictions and with full cookie access.
+ *
+ * If cachedMediaId is provided, loads from IndexedDB cache first.
  * If the src is already a data: or blob: URL, it renders directly without fetching.
  */
 export default function FetchImage({
     src,
     alt,
     className,
+    cachedMediaId,
 }: {
     src: string;
     alt?: string;
     className?: string;
+    cachedMediaId?: string;
 }) {
     const [blobUrl, setBlobUrl] = useState<string | null>(null);
     const [error, setError] = useState(false);
@@ -24,12 +27,27 @@ export default function FetchImage({
     const isLocalUrl = src.startsWith('data:') || src.startsWith('blob:');
 
     useEffect(() => {
-        if (!src || isLocalUrl) return;
+        if (isLocalUrl) return;
 
         let revoked = false;
         let url: string | null = null;
 
         (async () => {
+            // Try IndexedDB cache first
+            if (cachedMediaId) {
+                try {
+                    const media = await getMedia(cachedMediaId);
+                    if (media && !revoked) {
+                        url = mediaToObjectUrl(media);
+                        setBlobUrl(url);
+                        return;
+                    }
+                } catch {
+                    // Cache miss, fall through to fetch
+                }
+            }
+
+            // Fall back to privileged fetch
             try {
                 const res = await fetch(src);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -46,7 +64,7 @@ export default function FetchImage({
             revoked = true;
             if (url) URL.revokeObjectURL(url);
         };
-    }, [src, isLocalUrl]);
+    }, [src, isLocalUrl, cachedMediaId]);
 
     if (error) {
         return (

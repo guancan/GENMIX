@@ -1,5 +1,6 @@
 import type { Task, ToolType, TaskResultType } from '@/types/task';
 import JSZip from 'jszip';
+import { getMedia } from '@/storage/mediaStore';
 
 /* ─── Export Helpers ─── */
 
@@ -59,19 +60,22 @@ export function downloadFile(content: string, filename: string, mimeType: string
 
 /* ─── Media Export ─── */
 
-/** Extract all media URLs from a task's results */
-export function extractMediaUrls(task: Task): { url: string; type: 'image' | 'video' }[] {
-    const urls: { url: string; type: 'image' | 'video' }[] = [];
+/** Extract all media URLs (and cached IDs if available) from a task's results */
+export function extractMediaUrls(task: Task): { url: string; type: 'image' | 'video'; cachedMediaId?: string }[] {
+    const urls: { url: string; type: 'image' | 'video'; cachedMediaId?: string }[] = [];
     for (const result of task.results || []) {
         try {
             const parsed = JSON.parse(result.content);
+            const cachedIds = result.cachedMediaIds || [];
             if (parsed.type === 'image') {
                 const imageUrls: string[] = parsed.allImageUrls?.length
                     ? parsed.allImageUrls
                     : [parsed.imageBase64 || parsed.imageUrl].filter(Boolean);
-                for (const u of imageUrls) urls.push({ url: u, type: 'image' });
+                for (let i = 0; i < imageUrls.length; i++) {
+                    urls.push({ url: imageUrls[i], type: 'image', cachedMediaId: cachedIds[i] });
+                }
             } else if (parsed.type === 'video' && parsed.videoUrl) {
-                urls.push({ url: parsed.videoUrl, type: 'video' });
+                urls.push({ url: parsed.videoUrl, type: 'video', cachedMediaId: cachedIds[0] });
             }
         } catch { /* not JSON, skip */ }
     }
@@ -129,30 +133,45 @@ export async function exportMediaAsZip(
             : root;
 
         for (let i = 0; i < media.length; i++) {
-            const { url, type } = media[i];
+            const { url, type, cachedMediaId } = media[i];
             onProgress?.(Math.round((processed / totalUrls) * 80), `正在下载 ${processed + 1}/${totalUrls}...`);
 
             try {
+                let blob: Blob;
+
+                // Try IndexedDB cache first
+                if (cachedMediaId) {
+                    try {
+                        const cached = await getMedia(cachedMediaId);
+                        if (cached) {
+                            blob = cached.blob;
+                            const ext = getExtension(blob, url);
+                            const fname = mode === 'flat'
+                                ? `${sanitizeFilename(task.title)}_${type}_${i + 1}.${ext}`
+                                : `${type}_${i + 1}.${ext}`;
+                            folder.file(fname, blob);
+                            downloaded++;
+                            processed++;
+                            continue;
+                        }
+                    } catch { /* cache miss, fall through */ }
+                }
+
+                // Fall back to URL fetch
                 if (url.startsWith('data:')) {
                     const res = await fetch(url);
-                    const blob = await res.blob();
-                    const ext = getExtension(blob, url);
-                    const fname = mode === 'flat'
-                        ? `${sanitizeFilename(task.title)}_${i + 1}.${ext}`
-                        : `${i + 1}.${ext}`;
-                    folder.file(fname, blob);
-                    downloaded++;
+                    blob = await res.blob();
                 } else {
                     const res = await fetch(url);
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                    const blob = await res.blob();
-                    const ext = getExtension(blob, url);
-                    const fname = mode === 'flat'
-                        ? `${sanitizeFilename(task.title)}_${type}_${i + 1}.${ext}`
-                        : `${type}_${i + 1}.${ext}`;
-                    folder.file(fname, blob);
-                    downloaded++;
+                    blob = await res.blob();
                 }
+                const ext = getExtension(blob, url);
+                const fname = mode === 'flat'
+                    ? `${sanitizeFilename(task.title)}_${type}_${i + 1}.${ext}`
+                    : `${type}_${i + 1}.${ext}`;
+                folder.file(fname, blob);
+                downloaded++;
             } catch (err) {
                 const msg = `[${task.title}] ${url} — ${err instanceof Error ? err.message : 'Unknown error'}`;
                 errors.push(msg);

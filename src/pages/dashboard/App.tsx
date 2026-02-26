@@ -288,6 +288,7 @@ export default function App() {
                             src={parsed.allImageUrls[0]}
                             alt="Result"
                             className="w-8 h-8 rounded object-cover border border-slate-200 dark:border-slate-600"
+                            cachedMediaId={latest.cachedMediaIds?.[0]}
                         />
                         {parsed.allImageUrls.length > 1 && (
                             <span className="text-[10px] text-slate-400">+{parsed.allImageUrls.length - 1}</span>
@@ -298,6 +299,7 @@ export default function App() {
                         src={parsed.imageBase64 || parsed.imageUrl}
                         alt="Result"
                         className="w-8 h-8 rounded object-cover border border-slate-200 dark:border-slate-600"
+                        cachedMediaId={latest.cachedMediaIds?.[0]}
                     />
                 ) : parsed?.type === 'video' && parsed.videoUrl ? (
                     <div className="flex items-center gap-1">
@@ -305,6 +307,7 @@ export default function App() {
                             src={parsed.videoUrl}
                             type="video"
                             className="w-8 h-8 rounded object-cover border border-slate-200 dark:border-slate-600 bg-black"
+                            cachedMediaId={latest.cachedMediaIds?.[0]}
                         />
                         <span className="text-xs text-slate-500">Video</span>
                     </div>

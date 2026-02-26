@@ -3,6 +3,7 @@ import { useTasks } from '@/hooks/useTasks';
 import { useActiveTab } from '@/hooks/useActiveTab';
 import { useTaskQueue } from '@/hooks/useTaskQueue';
 import { getImages, blobToBase64 } from '@/storage/imageStore';
+import { cacheMediaUrls } from '@/storage/mediaStore';
 import { Play, Copy, Square, PlayCircle, RotateCcw, FastForward, Loader2 } from 'lucide-react';
 import { downloadAsZip } from '@/utils/downloadUtils';
 import FetchImage from './FetchImage';
@@ -107,6 +108,40 @@ export default function App() {
                     status: 'completed',
                     lastExecutedAt: Date.now()
                 });
+
+                // Cache media blobs to IndexedDB (async, non-blocking)
+                // The sidepanel has privileged fetch (no CORS), so this is the ideal place.
+                try {
+                    const parsed = JSON.parse(response.result || '{}');
+                    const mediaUrls: { url: string; type: 'image' | 'video' }[] = [];
+                    if (parsed.type === 'image') {
+                        const urls: string[] = parsed.allImageUrls?.length
+                            ? parsed.allImageUrls
+                            : [parsed.imageUrl].filter(Boolean);
+                        for (const u of urls) mediaUrls.push({ url: u, type: 'image' });
+                    } else if (parsed.type === 'video' && parsed.videoUrl) {
+                        mediaUrls.push({ url: parsed.videoUrl, type: 'video' });
+                    }
+
+                    console.log(`[Genmix Cache] Found ${mediaUrls.length} media URLs to cache`, mediaUrls.map(m => m.url.substring(0, 60)));
+
+                    if (mediaUrls.length > 0) {
+                        console.log('[Genmix Cache] Starting media download...');
+                        const cached = await cacheMediaUrls(mediaUrls);
+                        console.log(`[Genmix Cache] Cached ${cached.length}/${mediaUrls.length} media blobs`, cached.map(c => c.mediaId));
+
+                        if (cached.length > 0) {
+                            const cachedMediaIds = cached.map(c => c.mediaId);
+                            // Use the results we already have in scope (NOT stale tasks closure)
+                            const allResults = [...currentResults, { ...newResult, cachedMediaIds }];
+                            await updateTask(taskId, { results: allResults });
+                            console.log(`[Genmix Cache] ✅ Updated task ${taskId} with cachedMediaIds`, cachedMediaIds);
+                        }
+                    }
+                } catch (cacheErr) {
+                    console.warn('[Genmix Cache] ❌ Media caching failed (non-fatal):', cacheErr);
+                }
+
                 return { success: true };
             } else if (response && response.redirectUrl) {
                 console.log(`[Genmix] Task ${task.id} requires redirect to:`, response.redirectUrl);
@@ -445,6 +480,7 @@ export default function App() {
                                                     ? parsed.allImageUrls
                                                     : [parsed.imageBase64 || parsed.imageUrl].filter(Boolean);
                                                 const primarySrc = parsed.imageBase64 || parsed.imageUrl || allUrls[0];
+                                                const cachedIds = latestResult.cachedMediaIds || [];
 
                                                 return (
                                                     <div className="space-y-2">
@@ -469,12 +505,14 @@ export default function App() {
                                                                                 src={src}
                                                                                 alt={`Result ${i + 1}`}
                                                                                 className="w-full h-full max-h-[200px] object-contain rounded border border-slate-200 dark:border-slate-700 hover:opacity-90 transition-opacity cursor-pointer bg-slate-100 dark:bg-slate-900"
+                                                                                cachedMediaId={cachedIds[i]}
                                                                             />
                                                                         ) : (
                                                                             <MediaThumbnail
                                                                                 src={src}
                                                                                 alt={`Result ${i + 1}`}
                                                                                 className="w-full h-full max-h-[200px] object-contain rounded border border-slate-200 dark:border-slate-700 hover:opacity-90 transition-opacity cursor-pointer bg-slate-100 dark:bg-slate-900"
+                                                                                cachedMediaId={cachedIds[i]}
                                                                             />
                                                                         )}
                                                                     </a>
@@ -514,6 +552,7 @@ export default function App() {
                                                             src={parsed.videoUrl}
                                                             type="video"
                                                             className="w-full max-h-[200px] object-contain rounded border border-slate-200 dark:border-slate-700 cursor-pointer hover:opacity-90 transition-opacity bg-slate-100 dark:bg-slate-900"
+                                                            cachedMediaId={latestResult.cachedMediaIds?.[0]}
                                                         />
                                                     </a>
                                                     <div className="flex space-x-2">
@@ -562,7 +601,7 @@ export default function App() {
                         );
                     })
                 )}
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }

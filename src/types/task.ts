@@ -5,6 +5,7 @@ export type ToolType = 'chatgpt' | 'gemini' | 'sora' | 'jimeng' | 'other';
 export interface TaskResult {
     id: string;
     content: string;
+    cachedMediaIds?: string[];  // IndexedDB media IDs from mediaStore
     createdAt: number;
 }
 
