@@ -27,3 +27,7 @@ dist-ssr
 .playwright-data
 test-results
 tests/screenshots
+
+# 个人开发调试用 HTML 样本（本地抓取，不纳入版本库）
+*example*.html
+*_example_*.html
