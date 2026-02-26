@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Trash2, ImagePlus, Loader2, Download } from 'lucide-react';
+import { X, Trash2, ImagePlus, Loader2, Download, Copy } from 'lucide-react';
 import type { Task, ToolType, TaskResultType } from '@/types/task';
 import { saveImage, getImages, deleteImages } from '@/storage/imageStore';
 import { downloadAsZip } from '@/utils/downloadUtils';
@@ -11,6 +11,7 @@ interface EditTaskModalProps {
     onClose: () => void;
     onSave: (id: string, updates: Partial<Task>) => Promise<void>;
     onDelete: (id: string) => Promise<void>;
+    onDuplicate?: (id: string) => Promise<any>;
 }
 
 const MAX_IMAGES = 12;
@@ -22,7 +23,7 @@ interface ImagePreview {
     url: string;     // object URL for display
 }
 
-export function EditTaskModal({ task, isOpen, onClose, onSave, onDelete }: EditTaskModalProps) {
+export function EditTaskModal({ task, isOpen, onClose, onSave, onDelete, onDuplicate }: EditTaskModalProps) {
     const [title, setTitle] = useState('');
     const [prompt, setPrompt] = useState('');
     const [tool, setTool] = useState<ToolType>('chatgpt');
@@ -426,18 +427,30 @@ export function EditTaskModal({ task, isOpen, onClose, onSave, onDelete }: EditT
 
                     {/* Footer Actions */}
                     <div className="flex items-center justify-between p-4 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex-shrink-0">
-                        <button
-                            type="button"
-                            onClick={handleDelete}
-                            disabled={deleting}
-                            className={`flex items-center space-x-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${confirmDelete
-                                ? 'bg-red-600 text-white hover:bg-red-700'
-                                : 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
-                                }`}
-                        >
-                            <Trash2 size={15} />
-                            <span>{deleting ? 'Deleting...' : confirmDelete ? 'Confirm Delete' : 'Delete Task'}</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={handleDelete}
+                                disabled={deleting}
+                                className={`flex items-center space-x-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${confirmDelete
+                                    ? 'bg-red-600 text-white hover:bg-red-700'
+                                    : 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
+                                    }`}
+                            >
+                                <Trash2 size={15} />
+                                <span>{deleting ? 'Deleting...' : confirmDelete ? 'Confirm Delete' : 'Delete'}</span>
+                            </button>
+                            {onDuplicate && (
+                                <button
+                                    type="button"
+                                    onClick={async () => { await onDuplicate(task.id); onClose(); }}
+                                    className="flex items-center space-x-1 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md transition-colors"
+                                >
+                                    <Copy size={15} />
+                                    <span>Duplicate</span>
+                                </button>
+                            )}
+                        </div>
 
                         <div className="flex space-x-2">
                             <button

@@ -80,5 +80,29 @@ export const TaskStore = {
             const merged = strategy === 'prepend' ? [...created, ...existing] : [...existing, ...created];
             await chrome.storage.local.set({ [STORAGE_KEY]: merged });
         }
+    },
+
+    /** Duplicate a task: copy everything except id/status/results, insert after original */
+    async duplicateTask(id: string): Promise<Task> {
+        const tasks = await this.getAll();
+        const source = tasks.find(t => t.id === id);
+        if (!source) throw new Error('Task not found');
+
+        const now = Date.now();
+        const copy: Task = {
+            ...source,
+            id: crypto.randomUUID(),
+            title: `${source.title} (Copy)`,
+            status: 'pending',
+            results: [],
+            createdAt: now,
+            updatedAt: now,
+        };
+
+        // Insert right after the original
+        const idx = tasks.findIndex(t => t.id === id);
+        tasks.splice(idx + 1, 0, copy);
+        await chrome.storage.local.set({ [STORAGE_KEY]: tasks });
+        return copy;
     }
 };

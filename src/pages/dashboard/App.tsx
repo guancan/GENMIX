@@ -5,7 +5,7 @@ import { CreateTaskModal } from '@/components/CreateTaskModal';
 import { EditTaskModal } from '@/components/EditTaskModal';
 import { ImportModal } from '@/components/ImportModal';
 import { ExportModal } from '@/components/ExportModal';
-import { Plus, MoreHorizontal, Filter, Trash2, GripVertical, Upload, Download } from 'lucide-react';
+import { Plus, MoreHorizontal, Filter, Trash2, GripVertical, Upload, Download, Copy } from 'lucide-react';
 import type { Task } from '@/types/task';
 import ReferenceImageThumbnail from '@/pages/sidepanel/ReferenceImageThumbnail';
 import { MediaThumbnail } from '@/components/MediaThumbnail';
@@ -57,6 +57,7 @@ function SortableRow({
     isSelected,
     onToggleSelect,
     onEdit,
+    onDuplicate,
     renderResultPreview,
 }: {
     task: Task;
@@ -64,6 +65,7 @@ function SortableRow({
     isSelected: boolean;
     onToggleSelect: (id: string) => void;
     onEdit: (task: Task) => void;
+    onDuplicate: (taskId: string) => void;
     renderResultPreview: (task: Task) => React.ReactNode;
 }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
@@ -164,13 +166,22 @@ function SortableRow({
 
             {/* Actions */}
             <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                <button
-                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors opacity-0 group-hover:opacity-100"
-                    onClick={() => onEdit(task)}
-                    title="Edit task"
-                >
-                    <MoreHorizontal size={18} />
-                </button>
+                <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                        className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                        onClick={() => onDuplicate(task.id)}
+                        title="Duplicate task"
+                    >
+                        <Copy size={15} />
+                    </button>
+                    <button
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                        onClick={() => onEdit(task)}
+                        title="Edit task"
+                    >
+                        <MoreHorizontal size={18} />
+                    </button>
+                </div>
             </td>
         </tr>
     );
@@ -178,7 +189,7 @@ function SortableRow({
 
 /* ─── Main Dashboard ─── */
 export default function App() {
-    const { tasks, loading, addTask, updateTask, deleteTask, reorderTasks, deleteTasks, importTasks } = useTasks();
+    const { tasks, loading, addTask, updateTask, deleteTask, reorderTasks, deleteTasks, importTasks, duplicateTask } = useTasks();
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [isImportOpen, setIsImportOpen] = useState(false);
     const [isExportOpen, setIsExportOpen] = useState(false);
@@ -457,6 +468,7 @@ export default function App() {
                                             isSelected={selectedIds.has(task.id)}
                                             onToggleSelect={toggleSelect}
                                             onEdit={setEditingTask}
+                                            onDuplicate={duplicateTask}
                                             renderResultPreview={renderResultPreview}
                                         />
                                     ))}
@@ -487,6 +499,7 @@ export default function App() {
                 onClose={() => setEditingTask(null)}
                 onSave={updateTask}
                 onDelete={deleteTask}
+                onDuplicate={duplicateTask}
             />
 
             <ImportModal

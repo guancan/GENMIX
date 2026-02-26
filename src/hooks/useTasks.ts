@@ -67,8 +67,15 @@ export function useTasks() {
         // Storage listener will reload
     };
 
+    /** Duplicate a task (copy with new ID, cleared results) */
+    const duplicateTask = async (id: string): Promise<Task> => {
+        const copy = await TaskStore.duplicateTask(id);
+        // Storage listener will reload
+        return copy;
+    };
+
     const refresh = loadTasks;
 
-    return { tasks, loading, addTask, updateTask, deleteTask, reorderTasks, deleteTasks, importTasks, refresh };
+    return { tasks, loading, addTask, updateTask, deleteTask, reorderTasks, deleteTasks, importTasks, duplicateTask, refresh };
 }
 
