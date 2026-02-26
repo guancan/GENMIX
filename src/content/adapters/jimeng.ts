@@ -268,5 +268,50 @@ export const JimengAdapter: ToolAdapter = {
         }
 
         return null;
+    },
+
+    async scanAllResults() {
+        const items: import('./types').CapturedItem[] = [];
+        const allItems = document.querySelectorAll('.item-Xh64V7[data-index]');
+
+        allItems.forEach((item) => {
+            const idx = parseInt(item.getAttribute('data-index') || '0', 10);
+            const itemId = item.getAttribute('data-id') || `${idx}`;
+
+            // Skip loading items
+            if (item.querySelector('[class*="loading-container-"]')) return;
+            // Skip failed items
+            if (item.querySelector('[class*="error-tips-"]')) return;
+
+            // Images
+            const images = item.querySelectorAll<HTMLImageElement>('img[class*="image-TLmgkP"]');
+            if (images.length > 0) {
+                const imageUrls = Array.from(images).map(img => img.src).filter(Boolean);
+                if (imageUrls.length > 0) {
+                    items.push({
+                        id: `jimeng-img-${itemId}`,
+                        type: 'image',
+                        url: imageUrls[0],
+                        urls: imageUrls,
+                        thumbnail: imageUrls[0],
+                        sourceIndex: idx,
+                    });
+                }
+            }
+
+            // Videos
+            const video = item.querySelector<HTMLVideoElement>('video:not([class*="loading-animation-"])');
+            if (video?.src) {
+                items.push({
+                    id: `jimeng-vid-${itemId}`,
+                    type: 'video',
+                    url: video.src,
+                    thumbnail: video.src,
+                    sourceIndex: idx,
+                });
+            }
+        });
+
+        return items.reverse(); // Jimeng data-index=0 is newest; reverse to oldest-first
     }
 };

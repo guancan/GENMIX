@@ -117,6 +117,17 @@ if (adapter) {
             return true; // Keep channel open
         }
 
+        if (message.type === 'SCAN_PAGE_RESULTS') {
+            if (adapter.scanAllResults) {
+                adapter.scanAllResults()
+                    .then(items => sendResponse({ success: true, items }))
+                    .catch(err => sendResponse({ success: false, error: err.message }));
+                return true;
+            }
+            sendResponse({ success: false, error: 'Adapter does not support scanning' });
+            return;
+        }
+
         if (message.type === 'FILL_PROMPT' && message.payload) {
             console.log('[Genmix] Invoking adapter.fillPrompt...');
             adapter.fillPrompt(message.payload)

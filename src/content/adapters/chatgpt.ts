@@ -165,5 +165,51 @@ export const ChatGPTAdapter: ToolAdapter = {
             rawText: (lastTurn as HTMLElement).innerText,
             htmlContent: (lastTurn as HTMLElement).innerHTML,
         });
+    },
+
+    async scanAllResults() {
+        const items: import('./types').CapturedItem[] = [];
+        const turns = document.querySelectorAll('article[data-turn="assistant"]');
+
+        turns.forEach((turn, idx) => {
+            // Images
+            const imageContainer = turn.querySelector('[class*="imagegen-image"]') ||
+                turn.querySelector('[id^="image-"]');
+            if (imageContainer) {
+                const imgEl = imageContainer.querySelector('img[src*="backend-api/estuary"]') ||
+                    imageContainer.querySelector('img[alt="Generated image"]');
+                if (imgEl) {
+                    const imgUrl = (imgEl as HTMLImageElement).src;
+                    if (imgUrl) {
+                        items.push({
+                            id: `chatgpt-img-${idx}`,
+                            type: 'image',
+                            url: imgUrl,
+                            urls: [imgUrl],
+                            thumbnail: imgUrl,
+                            sourceIndex: idx,
+                        });
+                    }
+                }
+            }
+
+            // Text
+            const markdown = turn.querySelector('.markdown');
+            if (markdown) {
+                const rawText = (markdown as HTMLElement).innerText?.trim();
+                const htmlContent = (markdown as HTMLElement).innerHTML?.trim();
+                if (rawText && rawText.length > 0) {
+                    items.push({
+                        id: `chatgpt-txt-${idx}`,
+                        type: 'text',
+                        rawText,
+                        htmlContent,
+                        sourceIndex: idx,
+                    });
+                }
+            }
+        });
+
+        return items;
     }
 };

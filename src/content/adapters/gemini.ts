@@ -201,5 +201,62 @@ export const GeminiAdapter: ToolAdapter = {
         }
 
         return null;
+    },
+
+    async scanAllResults() {
+        const items: import('./types').CapturedItem[] = [];
+        const responses = document.querySelectorAll('model-response');
+
+        responses.forEach((response, idx) => {
+            // Images
+            const imageElements = Array.from(response.querySelectorAll('generated-image img.image'));
+            const imageUrls = imageElements
+                .map(img => (img as HTMLImageElement).src)
+                .filter(src => src && !src.startsWith('data:image/svg'));
+            if (imageUrls.length > 0) {
+                items.push({
+                    id: `gemini-img-${idx}`,
+                    type: 'image',
+                    url: imageUrls[0],
+                    urls: imageUrls,
+                    thumbnail: imageUrls[0],
+                    sourceIndex: idx,
+                });
+            }
+
+            // Videos
+            const videoElements = Array.from(response.querySelectorAll('generated-video video'));
+            const videoUrls = videoElements.map(v => (v as HTMLVideoElement).src).filter(Boolean);
+            videoUrls.forEach((vUrl, vIdx) => {
+                items.push({
+                    id: `gemini-vid-${idx}-${vIdx}`,
+                    type: 'video',
+                    url: vUrl,
+                    thumbnail: vUrl,
+                    sourceIndex: idx,
+                });
+            });
+
+            // Text
+            const markdownEl = response.querySelector('message-content .markdown');
+            if (markdownEl) {
+                const clone = markdownEl.cloneNode(true) as HTMLElement;
+                clone.querySelectorAll('.attachment-container').forEach(a => a.remove());
+                clone.querySelectorAll('.thoughts-container').forEach(t => t.remove());
+                const rawText = clone.textContent?.trim() || '';
+                const htmlContent = clone.innerHTML?.trim() || '';
+                if (rawText && rawText.length > 0) {
+                    items.push({
+                        id: `gemini-txt-${idx}`,
+                        type: 'text',
+                        rawText,
+                        htmlContent,
+                        sourceIndex: idx,
+                    });
+                }
+            }
+        });
+
+        return items;
     }
 };

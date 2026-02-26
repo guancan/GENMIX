@@ -4,11 +4,14 @@ import { useActiveTab } from '@/hooks/useActiveTab';
 import { useTaskQueue } from '@/hooks/useTaskQueue';
 import { getImages, blobToBase64 } from '@/storage/imageStore';
 import { cacheMediaUrls } from '@/storage/mediaStore';
-import { Play, Square, PlayCircle, RotateCcw, Loader2, Plus, Settings } from 'lucide-react';
+import { Play, Square, PlayCircle, RotateCcw, Loader2, Plus, Settings, ScanSearch } from 'lucide-react';
 import { downloadAsZip } from '@/utils/downloadUtils';
 import FetchImage from './FetchImage';
 import ReferenceImageThumbnail from './ReferenceImageThumbnail';
 import { MediaThumbnail } from '@/components/MediaThumbnail';
+import { ResultCapturePanel } from '@/components/ResultCapturePanel';
+import type { CapturedItem } from '@/content/adapters/types';
+import type { TaskResult } from '@/types/task';
 
 export default function App() {
     const { tasks, loading, updateTask } = useTasks();
@@ -24,6 +27,11 @@ export default function App() {
     const [error, setError] = useState<string | null>(null);
     const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+    // Result capture state
+    const [isCaptureOpen, setIsCaptureOpen] = useState(false);
+    const [capturedItems, setCapturedItems] = useState<CapturedItem[]>([]);
+    const [isScanning, setIsScanning] = useState(false);
 
     const toggleDownloading = (id: string, isDownloading: boolean) => {
         setDownloadingIds(prev => {
@@ -246,6 +254,114 @@ export default function App() {
         queue.runAll(ids);
     };
 
+    const handleScanPage = async () => {
+        setIsCaptureOpen(true);
+        setIsScanning(true);
+        setCapturedItems([]);
+        try {
+            if (!tabId) throw new Error('No tab ID');
+
+            // Try sending message to existing content script
+            let items: CapturedItem[] = [];
+            try {
+                const response = await chrome.tabs.sendMessage(tabId, { type: 'SCAN_PAGE_RESULTS' });
+                if (response?.success && response.items) {
+                    items = response.items;
+                }
+            } catch {
+                // Content script not injected — use dynamic injection with inline function
+                console.log('[Genmix] Content script not found, scanning via chrome.scripting...');
+                const results = await chrome.scripting.executeScript({
+                    target: { tabId },
+                    func: () => {
+                        // Inline scanning function — replicates adapter selectors
+                        const items: any[] = [];
+                        const host = window.location.hostname;
+
+                        if (host.includes('gemini.google.com')) {
+                            const responses = document.querySelectorAll('model-response');
+                            responses.forEach((response, idx) => {
+                                const imageElements = Array.from(response.querySelectorAll('generated-image img.image'));
+                                const imageUrls = imageElements.map(img => (img as HTMLImageElement).src).filter(src => src && !src.startsWith('data:image/svg'));
+                                if (imageUrls.length > 0) {
+                                    items.push({ id: `gemini-img-${idx}`, type: 'image', url: imageUrls[0], urls: imageUrls, thumbnail: imageUrls[0], sourceIndex: idx });
+                                }
+                                const videoElements = Array.from(response.querySelectorAll('generated-video video'));
+                                videoElements.forEach((v, vIdx) => {
+                                    const vUrl = (v as HTMLVideoElement).src;
+                                    if (vUrl) items.push({ id: `gemini-vid-${idx}-${vIdx}`, type: 'video', url: vUrl, thumbnail: vUrl, sourceIndex: idx });
+                                });
+                                const markdownEl = response.querySelector('message-content .markdown');
+                                if (markdownEl) {
+                                    const clone = markdownEl.cloneNode(true) as HTMLElement;
+                                    clone.querySelectorAll('.attachment-container').forEach(a => a.remove());
+                                    clone.querySelectorAll('.thoughts-container').forEach(t => t.remove());
+                                    const rawText = clone.textContent?.trim() || '';
+                                    const htmlContent = clone.innerHTML?.trim() || '';
+                                    if (rawText.length > 0) items.push({ id: `gemini-txt-${idx}`, type: 'text', rawText, htmlContent, sourceIndex: idx });
+                                }
+                            });
+                        } else if (host.includes('chatgpt.com')) {
+                            const turns = document.querySelectorAll('article[data-turn="assistant"]');
+                            turns.forEach((turn, idx) => {
+                                const imageContainer = turn.querySelector('[class*="imagegen-image"]') || turn.querySelector('[id^="image-"]');
+                                if (imageContainer) {
+                                    const imgEl = imageContainer.querySelector('img[src*="backend-api/estuary"]') || imageContainer.querySelector('img[alt="Generated image"]');
+                                    if (imgEl) {
+                                        const imgUrl = (imgEl as HTMLImageElement).src;
+                                        if (imgUrl) items.push({ id: `chatgpt-img-${idx}`, type: 'image', url: imgUrl, urls: [imgUrl], thumbnail: imgUrl, sourceIndex: idx });
+                                    }
+                                }
+                                const markdown = turn.querySelector('.markdown');
+                                if (markdown) {
+                                    const rawText = (markdown as HTMLElement).innerText?.trim();
+                                    const htmlContent = (markdown as HTMLElement).innerHTML?.trim();
+                                    if (rawText && rawText.length > 0) items.push({ id: `chatgpt-txt-${idx}`, type: 'text', rawText, htmlContent, sourceIndex: idx });
+                                }
+                            });
+                        } else if (host.includes('jimeng.jianying.com')) {
+                            const allItems = document.querySelectorAll('.item-Xh64V7[data-index]');
+                            allItems.forEach((item) => {
+                                const idx = parseInt(item.getAttribute('data-index') || '0', 10);
+                                const itemId = item.getAttribute('data-id') || `${idx}`;
+                                if (item.querySelector('[class*="loading-container-"]')) return;
+                                if (item.querySelector('[class*="error-tips-"]')) return;
+                                const images = item.querySelectorAll<HTMLImageElement>('img[class*="image-TLmgkP"]');
+                                if (images.length > 0) {
+                                    const imageUrls = Array.from(images).map(img => img.src).filter(Boolean);
+                                    if (imageUrls.length > 0) items.push({ id: `jimeng-img-${itemId}`, type: 'image', url: imageUrls[0], urls: imageUrls, thumbnail: imageUrls[0], sourceIndex: idx });
+                                }
+                                const video = item.querySelector<HTMLVideoElement>('video:not([class*="loading-animation-"])');
+                                if (video?.src) items.push({ id: `jimeng-vid-${itemId}`, type: 'video', url: video.src, thumbnail: video.src, sourceIndex: idx });
+                            });
+                            items.reverse(); // Jimeng data-index=0 is newest
+                        }
+                        return items;
+                    },
+                });
+                if (results?.[0]?.result) {
+                    items = results[0].result as CapturedItem[];
+                }
+            }
+
+            setCapturedItems(items);
+        } catch (err) {
+            console.error('[Genmix] Scan error:', err);
+        } finally {
+            setIsScanning(false);
+        }
+    };
+
+    const handleCaptureImport = async (taskId: string, results: TaskResult[]) => {
+        // Get the current task and append the new results
+        const task = tasks.find(t => t.id === taskId);
+        if (!task) return;
+        await updateTask(taskId, {
+            results: [...task.results, ...results],
+            status: 'completed',
+        });
+    };
+
     return (
         <div className="h-screen bg-slate-50 dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
             {/* Visibility Warning Banner */}
@@ -327,6 +443,16 @@ export default function App() {
                         </div>
                     </div>
                 )}
+
+                {/* Capture Page Results — in header */}
+                <button
+                    onClick={handleScanPage}
+                    className="flex items-center justify-center gap-1.5 w-full text-xs py-1.5 rounded border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-500 transition-all"
+                >
+                    <ScanSearch size={14} />
+                    <span>Capture Page Results</span>
+                </button>
+
                 {error && (
                     <div className="absolute left-0 top-full w-full bg-red-500 text-white text-xs p-2 text-center animate-pulse z-10">
                         {error}
@@ -586,6 +712,7 @@ export default function App() {
                     })
                 )}
 
+
                 {/* Add Task Placeholder Card */}
                 <div
                     onClick={openDashboard}
@@ -598,6 +725,18 @@ export default function App() {
                     <span className="text-[10px] mt-1 opacity-70">Go to Dashboard to manage tasks</span>
                 </div>
             </div >
+
+            {/* Result Capture Panel Overlay */}
+            {isCaptureOpen && (
+                <ResultCapturePanel
+                    items={capturedItems}
+                    tasks={toolTasks}
+                    isLoading={isScanning}
+                    onImport={handleCaptureImport}
+                    onClose={() => setIsCaptureOpen(false)}
+                    onRescan={handleScanPage}
+                />
+            )}
         </div >
     );
 }
