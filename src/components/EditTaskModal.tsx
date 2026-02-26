@@ -407,9 +407,16 @@ export function EditTaskModal({ task, isOpen, onClose, onSave, onDelete, onDupli
                                                             </div>
                                                         );
                                                     })() : (
-                                                        <div className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
-                                                            {result.content}
-                                                        </div>
+                                                        parsed?.htmlContent ? (
+                                                            <div
+                                                                className="genmix-prose text-sm text-slate-700 dark:text-slate-300 break-words"
+                                                                dangerouslySetInnerHTML={{ __html: parsed.htmlContent }}
+                                                            />
+                                                        ) : (
+                                                            <div className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
+                                                                {parsed?.rawText || parsed?.content || result.content}
+                                                            </div>
+                                                        )
                                                     )}
                                                 </div>
                                             );

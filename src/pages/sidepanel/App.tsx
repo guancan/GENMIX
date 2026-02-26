@@ -578,9 +578,14 @@ export default function App() {
                                                         </button>
                                                     </div>
                                                 </div>
+                                            ) : parsed?.htmlContent ? (
+                                                <div
+                                                    className="genmix-prose text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/30 p-2 rounded max-h-32 overflow-y-auto"
+                                                    dangerouslySetInnerHTML={{ __html: parsed.htmlContent }}
+                                                />
                                             ) : (
                                                 <div className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/30 p-2 rounded max-h-32 overflow-y-auto whitespace-pre-wrap">
-                                                    {parsed?.content || latestResult.content}
+                                                    {parsed?.rawText || parsed?.content || latestResult.content}
                                                 </div>
                                             )}
 

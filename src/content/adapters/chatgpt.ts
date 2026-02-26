@@ -155,13 +155,15 @@ export const ChatGPTAdapter: ToolAdapter = {
         if (markdown) {
             return JSON.stringify({
                 type: 'text',
-                content: (markdown as HTMLElement).innerText
+                rawText: (markdown as HTMLElement).innerText,
+                htmlContent: (markdown as HTMLElement).innerHTML,
             });
         }
 
         return JSON.stringify({
             type: 'text',
-            content: (lastTurn as HTMLElement).innerText
+            rawText: (lastTurn as HTMLElement).innerText,
+            htmlContent: (lastTurn as HTMLElement).innerHTML,
         });
     }
 };

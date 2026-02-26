@@ -7,3 +7,55 @@
     @apply antialiased text-slate-900 dark:text-slate-100 bg-white dark:bg-dark-900;
   }
 }
+
+/* ─── Rich text typography for AI responses ─── */
+.genmix-prose {
+  line-height: 1.6;
+}
+.genmix-prose h1 { font-size: 1.25em; font-weight: 700; margin: 0.6em 0 0.3em; }
+.genmix-prose h2 { font-size: 1.1em; font-weight: 600; margin: 0.5em 0 0.25em; }
+.genmix-prose h3 { font-size: 1em; font-weight: 600; margin: 0.4em 0 0.2em; }
+.genmix-prose p { margin: 0.3em 0; }
+.genmix-prose ul,
+.genmix-prose ol { margin: 0.3em 0; padding-left: 1.5em; }
+.genmix-prose ul { list-style-type: disc; }
+.genmix-prose ol { list-style-type: decimal; }
+.genmix-prose li { margin: 0.15em 0; }
+.genmix-prose code {
+  font-size: 0.85em;
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
+  background: rgba(0,0,0,0.06);
+}
+@media (prefers-color-scheme: dark) {
+  .genmix-prose code { background: rgba(255,255,255,0.1); }
+}
+.genmix-prose pre {
+  margin: 0.4em 0;
+  padding: 0.6em 0.8em;
+  border-radius: 6px;
+  overflow-x: auto;
+  background: rgba(0,0,0,0.04);
+  font-size: 0.82em;
+}
+@media (prefers-color-scheme: dark) {
+  .genmix-prose pre { background: rgba(255,255,255,0.06); }
+}
+.genmix-prose pre code { padding: 0; background: none; }
+.genmix-prose blockquote {
+  margin: 0.4em 0;
+  padding: 0.3em 0.8em;
+  border-left: 3px solid rgba(100,116,139,0.3);
+  color: rgba(100,116,139,0.9);
+}
+.genmix-prose a { color: #3b82f6; text-decoration: underline; }
+.genmix-prose table { border-collapse: collapse; margin: 0.4em 0; font-size: 0.9em; }
+.genmix-prose th,
+.genmix-prose td { border: 1px solid rgba(100,116,139,0.2); padding: 0.25em 0.5em; }
+.genmix-prose th { font-weight: 600; background: rgba(0,0,0,0.02); }
+@media (prefers-color-scheme: dark) {
+  .genmix-prose th { background: rgba(255,255,255,0.04); }
+}
+.genmix-prose hr { border: none; border-top: 1px solid rgba(100,116,139,0.2); margin: 0.6em 0; }
+.genmix-prose strong { font-weight: 600; }
+.genmix-prose em { font-style: italic; }

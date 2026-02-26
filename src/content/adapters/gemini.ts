@@ -121,6 +121,7 @@ export const GeminiAdapter: ToolAdapter = {
 
         // 1. Extract raw text (clean up UI elements like video player times)
         let rawText = '';
+        let htmlContent = '';
         const markdownElement = latestResponse.querySelector('message-content .markdown');
         if (markdownElement) {
             const clone = markdownElement.cloneNode(true) as HTMLElement;
@@ -132,6 +133,7 @@ export const GeminiAdapter: ToolAdapter = {
             thoughts.forEach(t => t.remove());
 
             rawText = clone.textContent?.trim() || '';
+            htmlContent = clone.innerHTML?.trim() || '';
         }
 
         // 2. Extract images strictly from generated-image components
@@ -194,6 +196,7 @@ export const GeminiAdapter: ToolAdapter = {
             return JSON.stringify({
                 type: 'text',
                 rawText,
+                htmlContent,
             });
         }
 
