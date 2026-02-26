@@ -42,5 +42,43 @@ export const TaskStore = {
         const tasks = await this.getAll();
         const filtered = tasks.filter(t => t.id !== id);
         await chrome.storage.local.set({ [STORAGE_KEY]: filtered });
+    },
+
+    /** Replace the entire task array (used for drag-and-drop reordering) */
+    async setAll(tasks: Task[]): Promise<void> {
+        await chrome.storage.local.set({ [STORAGE_KEY]: tasks });
+    },
+
+    /** Delete multiple tasks at once (used for batch deletion) */
+    async deleteMany(ids: string[]): Promise<void> {
+        const idSet = new Set(ids);
+        const tasks = await this.getAll();
+        const filtered = tasks.filter(t => !idSet.has(t.id));
+        await chrome.storage.local.set({ [STORAGE_KEY]: filtered });
+    },
+
+    /** Import tasks with a merge strategy */
+    async importTasks(
+        newTasks: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status'>[],
+        strategy: 'replace' | 'prepend' | 'append'
+    ): Promise<void> {
+        const now = Date.now();
+        const created: Task[] = newTasks.map(t => ({
+            ...t,
+            id: crypto.randomUUID(),
+            status: 'pending' as const,
+            createdAt: now,
+            updatedAt: now,
+            results: [],
+            referenceImageIds: [],
+        }));
+
+        if (strategy === 'replace') {
+            await chrome.storage.local.set({ [STORAGE_KEY]: created });
+        } else {
+            const existing = await this.getAll();
+            const merged = strategy === 'prepend' ? [...created, ...existing] : [...existing, ...created];
+            await chrome.storage.local.set({ [STORAGE_KEY]: merged });
+        }
     }
 };

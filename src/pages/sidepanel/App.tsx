@@ -7,6 +7,7 @@ import { Play, Copy, Square, PlayCircle, RotateCcw, FastForward, Loader2 } from 
 import { downloadAsZip } from '@/utils/downloadUtils';
 import FetchImage from './FetchImage';
 import ReferenceImageThumbnail from './ReferenceImageThumbnail';
+import { MediaThumbnail } from '@/components/MediaThumbnail';
 
 export default function App() {
     const { tasks, loading, updateTask } = useTasks();
@@ -470,7 +471,7 @@ export default function App() {
                                                                                 className="w-full h-full max-h-[200px] object-contain rounded border border-slate-200 dark:border-slate-700 hover:opacity-90 transition-opacity cursor-pointer bg-slate-100 dark:bg-slate-900"
                                                                             />
                                                                         ) : (
-                                                                            <img
+                                                                            <MediaThumbnail
                                                                                 src={src}
                                                                                 alt={`Result ${i + 1}`}
                                                                                 className="w-full h-full max-h-[200px] object-contain rounded border border-slate-200 dark:border-slate-700 hover:opacity-90 transition-opacity cursor-pointer bg-slate-100 dark:bg-slate-900"
@@ -509,12 +510,10 @@ export default function App() {
                                             })() : parsed?.type === 'video' ? (
                                                 <div className="space-y-2">
                                                     <a href={parsed.videoUrl} target="_blank" rel="noopener noreferrer" title="Click to open video">
-                                                        <video
+                                                        <MediaThumbnail
                                                             src={parsed.videoUrl}
-                                                            controls
-                                                            autoPlay
-                                                            loop
-                                                            className="w-full max-h-[120px] object-cover rounded border border-slate-200 dark:border-slate-700 cursor-pointer hover:opacity-90 transition-opacity"
+                                                            type="video"
+                                                            className="w-full max-h-[200px] object-contain rounded border border-slate-200 dark:border-slate-700 cursor-pointer hover:opacity-90 transition-opacity bg-slate-100 dark:bg-slate-900"
                                                         />
                                                     </a>
                                                     <div className="flex space-x-2">

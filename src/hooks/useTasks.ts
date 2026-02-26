@@ -39,14 +39,36 @@ export function useTasks() {
     };
 
     const deleteTask = async (id: string) => {
-        // Optimistic removal
         setTasks(prev => prev.filter(t => t.id !== id));
         await TaskStore.delete(id);
-        // Storage listener will confirm
+    };
+
+    /** Reorder tasks by providing the new ordered ID list */
+    const reorderTasks = async (orderedIds: string[]) => {
+        const taskMap = new Map(tasks.map(t => [t.id, t]));
+        const reordered = orderedIds.map(id => taskMap.get(id)!).filter(Boolean);
+        setTasks(reordered);
+        await TaskStore.setAll(reordered);
+    };
+
+    /** Delete multiple tasks at once */
+    const deleteTasks = async (ids: string[]) => {
+        const idSet = new Set(ids);
+        setTasks(prev => prev.filter(t => !idSet.has(t.id)));
+        await TaskStore.deleteMany(ids);
+    };
+
+    /** Import tasks with a merge strategy */
+    const importTasks = async (
+        newTasks: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'status'>[],
+        strategy: 'replace' | 'prepend' | 'append'
+    ) => {
+        await TaskStore.importTasks(newTasks, strategy);
+        // Storage listener will reload
     };
 
     const refresh = loadTasks;
 
-    return { tasks, loading, addTask, updateTask, deleteTask, refresh };
+    return { tasks, loading, addTask, updateTask, deleteTask, reorderTasks, deleteTasks, importTasks, refresh };
 }
 

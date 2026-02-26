@@ -1,26 +1,64 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, ImagePlus } from 'lucide-react';
 import type { ToolType, TaskResultType } from '@/types/task';
 import { saveImage } from '@/storage/imageStore';
+
+const PREFS_KEY = 'genmix_last_create_prefs';
 
 interface CreateTaskModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSubmit: (data: { title: string; tool: ToolType; resultType: TaskResultType; prompt: string; referenceImageIds: string[] }) => Promise<void>;
+    /** Total number of existing tasks, used to generate default task names */
+    taskCount?: number;
 }
 
 const MAX_IMAGES = 12;
 const ACCEPTED_TYPES = 'image/jpeg,image/jpg,image/png,image/webp,image/bmp';
 
-export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalProps) {
+const RESULT_TYPE_LABELS: Record<TaskResultType, string> = {
+    image: '图片生成',
+    video: '视频生成',
+    text: '文本生成',
+    mixed: '混合生成',
+};
+
+export function CreateTaskModal({ isOpen, onClose, onSubmit, taskCount = 0 }: CreateTaskModalProps) {
     const [title, setTitle] = useState('');
     const [prompt, setPrompt] = useState('');
     const [tool, setTool] = useState<ToolType>('chatgpt');
     const [resultType, setResultType] = useState<TaskResultType>('mixed');
     const [submitting, setSubmitting] = useState(false);
-    // Image upload state: preview URLs + raw files
     const [imagePreviews, setImagePreviews] = useState<{ file: File; url: string }[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [prefsLoaded, setPrefsLoaded] = useState(false);
+
+    // Load saved preferences when modal opens
+    useEffect(() => {
+        if (isOpen && !prefsLoaded) {
+            chrome.storage.local.get(PREFS_KEY).then((data) => {
+                const prefs = data[PREFS_KEY] as { tool?: ToolType; resultType?: TaskResultType } | undefined;
+                if (prefs) {
+                    if (prefs.tool) setTool(prefs.tool);
+                    if (prefs.resultType) setResultType(prefs.resultType);
+                }
+                setPrefsLoaded(true);
+            }).catch(() => {
+                setPrefsLoaded(true);
+            });
+        }
+        if (!isOpen) {
+            setPrefsLoaded(false);
+        }
+    }, [isOpen, prefsLoaded]);
+
+    // Generate default title when modal opens or resultType/taskCount changes
+    useEffect(() => {
+        if (isOpen && prefsLoaded && title === '') {
+            const defaultTitle = `任务 ${taskCount + 1} - ${RESULT_TYPE_LABELS[resultType]}`;
+            setTitle(defaultTitle);
+        }
+    }, [isOpen, prefsLoaded, resultType, taskCount]);
 
     if (!isOpen) return null;
 
@@ -43,6 +81,15 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
         });
     };
 
+    const handleResultTypeChange = (newType: TaskResultType) => {
+        const oldDefault = `任务 ${taskCount + 1} - ${RESULT_TYPE_LABELS[resultType]}`;
+        setResultType(newType);
+        // If title was the auto-generated default, update it
+        if (title === oldDefault) {
+            setTitle(`任务 ${taskCount + 1} - ${RESULT_TYPE_LABELS[newType]}`);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setSubmitting(true);
@@ -55,12 +102,14 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
             }
 
             await onSubmit({ title, tool, resultType, prompt, referenceImageIds: imageIds });
+
+            // Persist preferences for next time
+            chrome.storage.local.set({ [PREFS_KEY]: { tool, resultType } }).catch(() => { });
+
             onClose();
             // Reset form
             setTitle('');
             setPrompt('');
-            setTool('chatgpt');
-            setResultType('mixed');
             imagePreviews.forEach(p => URL.revokeObjectURL(p.url));
             setImagePreviews([]);
         } catch (error) {
@@ -75,7 +124,7 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-lg mx-4 overflow-hidden max-h-[90vh] flex flex-col">
                 <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
                     <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Create New Task</h2>
-                    <button onClick={onClose} className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+                    <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
                         <X size={20} />
                     </button>
                 </div>
@@ -118,7 +167,7 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
                         </label>
                         <select
                             value={resultType}
-                            onChange={(e) => setResultType(e.target.value as TaskResultType)}
+                            onChange={(e) => handleResultTypeChange(e.target.value as TaskResultType)}
                             className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
                         >
                             <option value="mixed">Mixed (Any results)</option>
@@ -134,7 +183,6 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
                             Reference Images <span className="text-slate-400 font-normal">({imagePreviews.length}/{MAX_IMAGES})</span>
                         </label>
 
-                        {/* Thumbnail grid */}
                         {imagePreviews.length > 0 && (
                             <div className="grid grid-cols-4 gap-2 mb-2">
                                 {imagePreviews.map((preview, i) => (
@@ -155,7 +203,6 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
                             </div>
                         )}
 
-                        {/* Upload button */}
                         {imagePreviews.length < MAX_IMAGES && (
                             <button
                                 type="button"
@@ -175,7 +222,7 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
                             className="hidden"
                             onChange={(e) => {
                                 handleFilesSelected(e.target.files);
-                                e.target.value = ''; // Reset so same file can be re-selected
+                                e.target.value = '';
                             }}
                         />
                     </div>

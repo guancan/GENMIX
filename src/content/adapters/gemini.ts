@@ -7,31 +7,42 @@ export const GeminiAdapter: ToolAdapter = {
     async fillImages(blobs: Blob[]) {
         if (!blobs || blobs.length === 0) return;
 
-        // Gemini uses a hidden file input for its document/image upload
-        const fileInput = document.querySelector('input.hidden-local-upload-button[type="file"]') as HTMLInputElement;
-        if (!fileInput) {
-            console.warn('[Genmix] Gemini hidden upload input not found');
+        // Gemini uses Quill.js editor — the most reliable way to inject images
+        // is simulating a clipboard paste, exactly like a user doing Ctrl+V.
+        const editor = document.querySelector('.ql-editor') as HTMLElement;
+        if (!editor) {
+            console.warn('[Genmix] Gemini editor (.ql-editor) not found for image paste');
             return;
         }
 
-        // Create a DataTransfer object to simulate a user file drag/drop or selection
-        const dataTransfer = new DataTransfer();
+        // Ensure the editor is focused before pasting
+        editor.focus();
 
-        blobs.forEach((blob, index) => {
-            // Assign a dummy filename with a proper extension based on MIME type
+        for (let i = 0; i < blobs.length; i++) {
+            const blob = blobs[i];
             const ext = blob.type === 'image/png' ? 'png' : 'jpg';
-            const file = new File([blob], `reference_image_${index + 1}.${ext}`, { type: blob.type });
-            dataTransfer.items.add(file);
-        });
+            const file = new File([blob], `reference_image_${i + 1}.${ext}`, { type: blob.type || 'image/png' });
 
-        // Set the files on the hidden input
-        fileInput.files = dataTransfer.files;
+            // Build a DataTransfer with this single file
+            const dt = new DataTransfer();
+            dt.items.add(file);
 
-        // Dispatch a change event so Angular/Google's framework detects the new files and starts uploading them
-        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+            // Dispatch a paste event on the editor — Quill listens for this
+            const pasteEvent = new ClipboardEvent('paste', {
+                bubbles: true,
+                cancelable: true,
+                clipboardData: dt,
+            });
+            editor.dispatchEvent(pasteEvent);
 
-        // Wait a bit longer for the UI to process the uploads before we type the prompt
-        await new Promise(r => setTimeout(r, 800));
+            console.log(`[Genmix] Pasted reference image ${i + 1}/${blobs.length}`);
+
+            // Wait for Gemini to process the pasted image before the next one
+            await new Promise(r => setTimeout(r, 1500));
+        }
+
+        // Extra settle time after all images are pasted
+        await new Promise(r => setTimeout(r, 500));
     },
 
     async fillPrompt(text: string) {
