@@ -4,7 +4,7 @@ import { useActiveTab } from '@/hooks/useActiveTab';
 import { useTaskQueue } from '@/hooks/useTaskQueue';
 import { getImages, blobToBase64 } from '@/storage/imageStore';
 import { cacheMediaUrls } from '@/storage/mediaStore';
-import { Play, Copy, Square, PlayCircle, RotateCcw, FastForward, Loader2 } from 'lucide-react';
+import { Play, Square, PlayCircle, RotateCcw, Loader2, Plus, Settings } from 'lucide-react';
 import { downloadAsZip } from '@/utils/downloadUtils';
 import FetchImage from './FetchImage';
 import ReferenceImageThumbnail from './ReferenceImageThumbnail';
@@ -23,6 +23,7 @@ export default function App() {
 
     const [error, setError] = useState<string | null>(null);
     const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
     const toggleDownloading = (id: string, isDownloading: boolean) => {
         setDownloadingIds(prev => {
@@ -257,26 +258,37 @@ export default function App() {
             )}
 
             <header className="p-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm relative">
-                <div className="flex items-center justify-between mb-2">
-                    <h1 className="text-sm font-semibold text-slate-900 dark:text-white">Genmix Assistant</h1>
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center space-x-2">
+                        <h1 className="text-sm font-semibold text-slate-900 dark:text-white">Genmix Assistant</h1>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-sm font-medium ${currentTool !== 'unknown' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {currentTool === 'unknown' ? 'No Tool Detected' : currentTool}
+                        </span>
+                    </div>
                     <button onClick={openDashboard} className="text-xs text-blue-600 hover:underline">Open Dashboard</button>
                 </div>
-                <div className="flex items-center space-x-2 mb-3">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${currentTool !== 'unknown' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                        {currentTool === 'unknown' ? 'No Tool Detected' : currentTool}
-                    </span>
-                </div>
 
-                {/* Queue Controls */}
-                {visibleTasks.length > 0 && (
-                    <div className="space-y-2">
-                        {/* Run All / Stop */}
-                        <div className="flex items-center space-x-2">
+                {/* Queue Controls & Filters */}
+                {toolTasks.length > 0 && (
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex-1 mr-2 max-w-[120px]">
+                            <select
+                                value={resultTypeFilter}
+                                onChange={e => setResultTypeFilter(e.target.value)}
+                                className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded py-1.5 px-2 focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-700 dark:text-slate-300 cursor-pointer"
+                            >
+                                <option value="all">类型: 全部</option>
+                                <option value="image">类型: 🖼️ 图片</option>
+                                <option value="video">类型: 🎬 视频</option>
+                                <option value="text">类型: 📝 文本</option>
+                            </select>
+                        </div>
+                        <div className="flex items-center space-x-1 relative">
                             {!queue.isRunning ? (
                                 <button
                                     onClick={handleRunAll}
                                     disabled={visibleTasks.length === 0}
-                                    className="flex-1 flex items-center justify-center space-x-1 text-xs bg-blue-600 hover:bg-blue-700 text-white py-1.5 px-3 rounded transition-colors"
+                                    className="flex items-center justify-center space-x-1 text-xs bg-blue-600 hover:bg-blue-700 text-white py-1.5 px-3 rounded transition-colors"
                                 >
                                     <PlayCircle size={14} />
                                     <span>Run All ({visibleTasks.length})</span>
@@ -284,60 +296,35 @@ export default function App() {
                             ) : (
                                 <button
                                     onClick={queue.stop}
-                                    className="flex-1 flex items-center justify-center space-x-1 text-xs bg-red-500 hover:bg-red-600 text-white py-1.5 px-3 rounded transition-colors"
+                                    className="flex items-center justify-center space-x-1 text-xs bg-red-500 hover:bg-red-600 text-white py-1.5 px-3 rounded transition-colors"
                                 >
                                     <Square size={12} />
                                     <span>Stop Queue</span>
                                 </button>
                             )}
-                        </div>
-
-                        {/* Toggle Switches */}
-                        <div className="flex items-center justify-between text-[11px]">
-                            <label className="flex items-center space-x-1.5 cursor-pointer select-none text-slate-600 dark:text-slate-400">
-                                <input
-                                    type="checkbox"
-                                    checked={queue.autoNext}
-                                    onChange={e => queue.setAutoNext(e.target.checked)}
-                                    className="w-3.5 h-3.5 rounded accent-blue-600"
-                                />
-                                <FastForward size={12} />
-                                <span>Auto Next</span>
-                            </label>
-                            <label className="flex items-center space-x-1.5 cursor-pointer select-none text-slate-600 dark:text-slate-400">
-                                <input
-                                    type="checkbox"
-                                    checked={queue.retryOnFail}
-                                    onChange={e => queue.setRetryOnFail(e.target.checked)}
-                                    className="w-3.5 h-3.5 rounded accent-orange-500"
-                                />
-                                <RotateCcw size={12} />
-                                <span>Retry Failed</span>
-                            </label>
-                        </div>
-                    </div>
-                )}
-
-                {/* Result Type Filter Tabs */}
-                {toolTasks.length > 0 && (
-                    <div className="flex items-center space-x-1 mt-3">
-                        {[
-                            { key: 'all', label: '全部' },
-                            { key: 'image', label: '🖼️ 图片' },
-                            { key: 'video', label: '🎬 视频' },
-                            { key: 'text', label: '📝 文本' },
-                        ].map(tab => (
                             <button
-                                key={tab.key}
-                                onClick={() => setResultTypeFilter(tab.key)}
-                                className={`text-[11px] px-2.5 py-1 rounded-full transition-colors ${resultTypeFilter === tab.key
-                                    ? 'bg-blue-600 text-white font-semibold'
-                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                                    }`}
+                                onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                                className={`p-1.5 rounded transition-colors ${isSettingsOpen ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                             >
-                                {tab.label}
+                                <Settings size={14} />
                             </button>
-                        ))}
+                            {isSettingsOpen && (
+                                <div className="absolute right-0 top-full mt-1.5 w-40 bg-white dark:bg-slate-800 rounded shadow-lg border border-slate-200 dark:border-slate-700 p-2 z-50">
+                                    <label className="flex items-center justify-between cursor-pointer text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 p-1.5 rounded transition-colors">
+                                        <div className="flex items-center space-x-1.5">
+                                            <RotateCcw size={13} className="text-orange-500" />
+                                            <span className="font-medium">Retry Failed</span>
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            checked={queue.retryOnFail}
+                                            onChange={e => queue.setRetryOnFail(e.target.checked)}
+                                            className="w-3.5 h-3.5 rounded accent-orange-500 cursor-pointer"
+                                        />
+                                    </label>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
                 {error && (
@@ -404,14 +391,6 @@ export default function App() {
                                 </p>
 
                                 <div className="flex items-center space-x-2 mb-3">
-                                    <button
-                                        onClick={() => navigator.clipboard.writeText(task.prompt)}
-                                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors flex-shrink-0"
-                                        title="Copy prompt"
-                                    >
-                                        <Copy size={12} />
-                                    </button>
-
                                     {isExecuting ? (
                                         <div className="flex-1 text-xs px-3 py-1.5 rounded flex items-center justify-center space-x-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                                             <span className="animate-spin inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full" />
@@ -606,6 +585,18 @@ export default function App() {
                         );
                     })
                 )}
+
+                {/* Add Task Placeholder Card */}
+                <div
+                    onClick={openDashboard}
+                    className="m-3 p-4 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg flex flex-col items-center justify-center text-slate-500 dark:text-slate-400 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer transition-all group"
+                >
+                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/40 flex items-center justify-center mb-2 transition-colors">
+                        <Plus size={16} />
+                    </div>
+                    <span className="text-sm font-medium">Add New Task</span>
+                    <span className="text-[10px] mt-1 opacity-70">Go to Dashboard to manage tasks</span>
+                </div>
             </div >
         </div >
     );

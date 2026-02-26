@@ -39,7 +39,7 @@ export function useTaskQueue({ executeTask, onStop }: UseTaskQueueOptions): UseT
     const [executingId, setExecutingId] = useState<string | null>(null);
     const [queuedIds, setQueuedIds] = useState<string[]>([]);
     const [autoNext, setAutoNext] = useState(true);
-    const [retryOnFail, setRetryOnFail] = useState(false);
+    const [retryOnFail, setRetryOnFail] = useState(true);
     const [isRunning, setIsRunning] = useState(false);
 
     // Use refs to access latest toggle values inside the async loop
